@@ -16,14 +16,21 @@ The mapping for the first kind lives in :mod:`gutenberg_simplifier.api_errors`
 that is worth testing without a server.
 """
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
-from hayhooks import BasePipelineWrapper, log
+from hayhooks import BasePipelineWrapper, get_last_user_message, log
 
 from gutenberg_simplifier.api_errors import to_http_exception, unwrap
 from gutenberg_simplifier.api_models import SimplifyResponse, to_response
 from gutenberg_simplifier.assembly import build_result
-from gutenberg_simplifier.pipeline import DEFAULT_MODEL, build_simplification_pipeline
+from gutenberg_simplifier.chat import ChatParseError, parse_chat_request
+from gutenberg_simplifier.pipeline import (
+    DEFAULT_MODEL,
+    build_simplification_pipeline,
+    default_generator,
+)
+from gutenberg_simplifier.streaming import stream_simplification
 from gutenberg_simplifier.tiers import AgeTier
 
 _OUTPUTS = {"fetcher", "stripper", "boundary_detector", "simplifier"}
@@ -34,8 +41,16 @@ _OUTPUTS = {"fetcher", "stripper", "boundary_detector", "simplifier"}
 # relaxing the setting for the whole package.
 class PipelineWrapper(BasePipelineWrapper):  # type: ignore[misc]
     def setup(self) -> None:
-        """Build the pipeline once, at server start rather than per request."""
+        """Build once, at server start rather than per request.
+
+        The chat surface keeps its own generators rather than reaching into the
+        pipeline's components: streaming needs per-call callbacks, and sharing a
+        component instance across concurrent streamed requests would mean
+        sharing whatever per-call state it holds.
+        """
         self.pipeline = build_simplification_pipeline()
+        self.boundary_generator = default_generator()
+        self.simplify_generator = default_generator()
 
     def run_api(
         self,
@@ -92,3 +107,37 @@ class PipelineWrapper(BasePipelineWrapper):  # type: ignore[misc]
             segments=envelope.metadata.get("segments"),
         )
         return to_response(envelope)
+
+    async def run_chat_completion_async(
+        self, model: str, messages: list[dict[str, Any]], body: dict[str, Any]
+    ) -> AsyncGenerator[str, None]:
+        """Stream a simplified book over the OpenAI-compatible chat endpoint.
+
+        Args:
+            model: The deployed pipeline name, supplied by the caller's client.
+            messages: OpenAI-format chat history. Only the last user message is
+                read -- this is a request surface, not a conversation.
+            body: Additional OpenAI parameters. Unused.
+        """
+        question = get_last_user_message(messages)
+
+        try:
+            request = parse_chat_request(question)
+        except ChatParseError as exc:
+            # A stream has already committed to 200, and the caller is a person.
+            # Hand them the sentence, not a status code.
+            log.info("chat request unparsed", detail=str(exc))
+            return _single_message(str(exc))
+
+        log.info("chat simplify requested", book_id=request.book_id, tier=request.tier.value)
+        return stream_simplification(
+            request.book_id,
+            request.tier,
+            boundary_generator=self.boundary_generator,
+            simplify_generator=self.simplify_generator,
+        )
+
+
+async def _single_message(text: str) -> AsyncGenerator[str, None]:
+    """Wrap one string as a stream, so both branches return the same type."""
+    yield text

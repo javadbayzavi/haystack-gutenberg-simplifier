@@ -1,7 +1,9 @@
 """Test doubles shared across pipeline tests."""
 
+import asyncio
+
 from haystack import component
-from haystack.dataclasses import ChatMessage, ToolCall
+from haystack.dataclasses import ChatMessage, StreamingChunk, ToolCall
 
 
 @component
@@ -76,3 +78,52 @@ def reads(count: int) -> list[object]:
 def decision(**arguments: object) -> list[object]:
     """A single record_decision turn."""
     return [[("record_decision", arguments)]]
+
+
+@component
+class AsyncStreamingChatGenerator:
+    """A generator that streams a reply token by token via run_async.
+
+    Records the messages each call received, so tests can assert what reached
+    the model as well as what came back.
+    """
+
+    def __init__(self, reply: str = "The rabbit ran home.", *, fail_with: Exception | None = None):
+        self.reply = reply
+        self.fail_with = fail_with
+        self.seen: list[list[ChatMessage]] = []
+        self.cancelled = 0
+
+    # Haystack requires run and run_async to share a signature, and this one
+    # mirrors AnthropicChatGenerator's.
+    @component.output_types(replies=list[ChatMessage])
+    def run(
+        self,
+        messages: list[ChatMessage],
+        streaming_callback: object = None,
+        generation_kwargs: object = None,
+        tools: object = None,
+    ) -> dict[str, list[ChatMessage]]:
+        self.seen.append(messages)
+        return {"replies": [ChatMessage.from_assistant(self.reply)]}
+
+    @component.output_types(replies=list[ChatMessage])
+    async def run_async(
+        self,
+        messages: list[ChatMessage],
+        streaming_callback: object = None,
+        generation_kwargs: object = None,
+        tools: object = None,
+    ) -> dict[str, list[ChatMessage]]:
+        self.seen.append(messages)
+        if self.fail_with is not None:
+            raise self.fail_with
+        try:
+            for word in self.reply.split(" "):
+                if callable(streaming_callback):
+                    await streaming_callback(StreamingChunk(content=word + " "))
+                await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            self.cancelled += 1
+            raise
+        return {"replies": [ChatMessage.from_assistant(self.reply)]}

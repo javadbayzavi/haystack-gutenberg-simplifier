@@ -12,9 +12,9 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 4** of [PR-PLAN.md](PR-PLAN.md). The full path is wired and
-deployed: fetch → strip → locate the story → rewrite it for a reading age →
-return a versioned envelope with token and cost accounting.
+Built to **PR 5** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed: a
+JSON endpoint returning a versioned envelope, and an OpenAI-compatible chat
+endpoint that streams the rewritten story token by token.
 
 | PR | Scope | State |
 |----|-------|-------|
@@ -23,8 +23,8 @@ return a versioned envelope with token and cost accounting.
 | 2 | Haystack pipeline behind a Hayhooks endpoint | done |
 | 3 | Boundary-detection agent with a bounded loop | done |
 | 4 | Age-tiered simplification, structured output | done |
-| 5 | Streaming | next |
-| 6 | Failure modes and evals | |
+| 5 | Streaming | done |
+| 6 | Failure modes and evals | next |
 | 7 | Observability and hardening | |
 | 8 | Container and minikube | |
 
@@ -205,6 +205,57 @@ output was empty.
 **`schema_version` on every response.** Consumers of an LLM pipeline break on
 shape changes far more often than content changes; this is the cheapest way to
 let a client notice.
+
+## Design notes for PR 5
+
+**What streams, and what does not.** The prose streams token by token — that is
+the part a reader waits on. The phases before it emit *progress lines*, never
+model output. The boundary agent is reasoning about a book, not writing one;
+streaming its chatter would leak half-formed judgments and fragments of source
+text it was explicitly told not to reproduce. So those phases report **that**
+they are happening, never what the model is saying. Two tests assert exactly
+that: the agent's own notes never appear in the stream, and neither does the
+source text.
+
+**A stream cannot return a status code.** The moment the first byte leaves, the
+response is 200. So every failure after that point is written as a sentence
+instead. This is not a workaround — the chat surface talks to a person and the
+REST surface talks to a program, and each gets the failure form it can use. The
+same book that answers `413` on `/simplify/run` answers with a readable line
+here.
+
+**A failing model is handled per phase, and the two differ.** A boundary-phase
+failure degrades to "I could not read this book just now" — nothing of value
+has streamed yet. A failure *during* the prose is different: re-raising would
+drop the connection and leave a partial story that reads exactly like a
+finished one, so the stream says it stopped early and names the part. Both log
+the real cause; neither shows it to the reader.
+
+**Abandonment cancels the call.** Readers close tabs mid-story — that is the
+normal case, not an exceptional one. The streaming helper cancels the in-flight
+model call rather than leaving it billing tokens into a closed socket, and a
+test asserts the cancellation actually happened.
+
+**Chat parsing is where these surfaces break.** "read me 14838 for a 5 year
+old" contains two numbers, and picking wrong silently fetches the wrong book.
+Ages are consumed by explicit patterns first, an explicitly labelled id always
+wins, and whatever survives is the id. `test_chat.py` covers the phrasings
+people actually type, including the ones that must be refused.
+
+## Streaming surface
+
+The chat endpoint is OpenAI-compatible, so any OpenAI client or a UI like
+open-webui can point at it. `model` is the pipeline name:
+
+```bash
+curl -sN -X POST http://localhost:1416/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"simplify","messages":[{"role":"user","content":"simplify 14838 for a 5 year old"}],"stream":true}'
+```
+
+Accepted phrasings include a bare id, `book 14838`, `14838 preschool`,
+`14838 for a 7 year old`, `14838 aged 9`, `14838 for my 6yo`. Without an age or
+tier it defaults to `early_reader`.
 
 ## Running the service
 
