@@ -12,15 +12,17 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 1** of [PR-PLAN.md](PR-PLAN.md). The deterministic stage — fetching
-and boilerplate removal — is complete and tested. No LLM involvement yet.
+Built to **PR 2** of [PR-PLAN.md](PR-PLAN.md). The pipeline is wired end to end
+and deploys behind an HTTP endpoint. Simplification is deliberately naive — one
+prompt over the whole book, no chunking, no age tiers, no boundary detection.
+That is the walking skeleton; the interesting extraction arrives in PR 3.
 
 | PR | Scope | State |
 |----|-------|-------|
 | 0 | Repo scaffolding, lint/type/test gates | done |
 | 1 | Fetch + boilerplate strip, zero LLM | done |
-| 2 | Haystack pipeline behind a Hayhooks endpoint | next |
-| 3 | Boundary-detection agent with a bounded loop | |
+| 2 | Haystack pipeline behind a Hayhooks endpoint | done |
+| 3 | Boundary-detection agent with a bounded loop | next |
 | 4 | Age-tiered simplification, structured output | |
 | 5 | Streaming | |
 | 6 | Failure modes and evals | |
@@ -59,11 +61,27 @@ Exit codes are meaningful: `2` not found, `3` over budget, `4` fetch failed.
 
 **Reject before you spend.** An oversized book is refused before any LLM call.
 Two layers do it: a HEAD request for the advertised size, and a hard cap on the
-streamed body. Measured caveat — gutenberg.org answers HEAD with `200` and *no*
-`content-length`, so against the real site only the second layer fires. The HEAD
-is kept because it rejects unknown ids without transferring a body, but the
-streaming cap is the actual guarantee. A size gate that trusts the server to
-volunteer its size is not a gate.
+streamed body.
+
+Measuring against the real site turned up something worth keeping in the notes.
+gutenberg.org gzips its plain text, so `Content-Length` reports the *compressed*
+size — 9,523 bytes for a book whose decoded text is 25,952 (~2.7:1). The budget
+is denominated in decoded bytes, so the gate was comparing two different units.
+Other ids return no `Content-Length` at all.
+
+To be precise about the impact: the final decision was never wrong. The
+streaming cap counts decoded bytes, so an over-budget gzipped book was still
+rejected — just after paying for the full download the gate was supposed to
+avoid. What the mismatch actually cost was the gate's whole purpose, plus a
+misleading error message on the one path where it did fire (reporting a
+compressed number as if it were the book's size). The fetcher now ignores any
+advertised length carrying a `Content-Encoding`, so the code no longer claims a
+conclusion it cannot draw.
+
+The HEAD is kept — it still rejects unknown ids without transferring a body, and
+the gate is correct for origins that report uncompressed lengths — but it is an
+optimisation, not the guarantee. The guarantee is the cap. A size gate that
+trusts the server to volunteer a comparable number is not a gate.
 
 **Retry only what is worth retrying.** A 404 is a permanent fact about a book id
 and is raised immediately, with no second attempt. Timeouts and 5xx get bounded
@@ -84,6 +102,49 @@ untrusted rather than half-believed.
 **No `errors="replace"` on decode.** Substituting U+FFFD would manufacture
 exactly the garbled-text signal the boundary agent is supposed to detect for
 real. UTF-8 is tried strictly, then Latin-1 for older texts.
+
+## Design notes for PR 2
+
+**Components are thin adapters.** Fetching and stripping stay plain functions;
+`@component` classes only translate to Haystack's socket model. PR 3's agent
+needs the same reader logic outside a pipeline run, so the logic must not live
+inside a component.
+
+**Haystack wraps component exceptions.** Every exception a component raises
+arrives as a `PipelineRuntimeError` with the original on `__cause__`. A wrapper
+catching `BookNotFoundError` around `pipeline.run()` never matches — every
+deliberate rejection would have surfaced as a generic 500. `api_errors.unwrap`
+walks the cause chain (cycle-safe), and the mapping lives in `src/` rather than
+in the wrapper so it can be tested without a server.
+
+**HTTP codes for facts, envelope fields for judgments.** Deterministic failures
+map to status codes, because HTTP already has vocabulary for them: 404 unknown
+book, 413 over budget, 502 upstream failure, 422 from schema validation. The
+structured `status`/`reason` envelope is deliberately *not* used yet — it earns
+its place in PR 3, where the agent produces judgments ("boundaries ambiguous",
+"text looked corrupted") that no status code expresses honestly.
+
+**The generator is injectable.** `build_simplification_pipeline(generator=...)`
+takes a stub in tests, so the full wiring is exercised with no API key and no
+network. The HTTP client is injectable for the same reason.
+
+## Running the service
+
+Set the key first — `.env` is gitignored:
+
+```bash
+cp .env.example .env   # then put your real key in it
+export ANTHROPIC_API_KEY=$(grep ANTHROPIC_API_KEY .env | cut -d= -f2-)
+.myenv/bin/hayhooks run
+```
+
+The pipeline in `pipelines/simplify/` is discovered automatically. Then:
+
+```bash
+curl -s -X POST http://localhost:1416/simplify/run -H 'Content-Type: application/json' -d '{"book_id": 14838}'
+```
+
+Interactive schema at `http://localhost:1416/docs`.
 
 ## Development
 

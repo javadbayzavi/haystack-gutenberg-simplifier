@@ -7,12 +7,18 @@ the budget is enforced long before a single token of LLM spend. Two layers do
 that: a HEAD request for the advertised size, and a hard cap on the streamed
 body.
 
-Measured caveat, gutenberg.org as of 2026-08: HEAD returns 200 but sets no
-``content-length``, so in practice against the real site the first layer never
-fires and the streaming cap is what does the work. The HEAD is kept because it
-still rejects unknown book ids without transferring a body, and because a size
-gate must not depend on the server volunteering the truth -- but it is an
-optimisation, not the guarantee. The guarantee is the cap.
+Measured against gutenberg.org, 2026-08: the HEAD layer almost never fires
+there, for two separate reasons. Some ids answer with no ``content-length`` at
+all. Others do send one, but gzipped -- and a compressed length is not
+comparable to a budget denominated in decoded bytes (~2.7:1 for plain text).
+That mismatch never produced a wrong decision, because the cap below counts
+decoded bytes and backstops it; what it cost was the early rejection the gate
+exists to provide. Both cases are now detected and deferred to the cap.
+
+The HEAD is kept because it still rejects unknown ids without transferring a
+body, and because the gate is correct for any origin that reports an
+uncompressed length. But it is an optimisation, not the guarantee. The
+guarantee is the cap.
 
 *Retry only what is worth retrying.* A 404 is a permanent answer about this book
 id and is surfaced immediately; timeouts and 5xx are transient and get a bounded
@@ -136,6 +142,14 @@ def _reject_oversized_upfront(
 
     if response.status_code == httpx.codes.NOT_FOUND:
         raise BookNotFoundError(book_id)
+
+    if response.headers.get("content-encoding"):
+        # Content-Length then describes the *compressed* transfer, while the
+        # budget is in decoded bytes -- two different units. gutenberg.org gzips
+        # at roughly 2.7:1 for plain text. The streaming cap still enforces the
+        # real limit either way, so the cost of comparing anyway is not a wrong
+        # decision but a useless gate plus a misleading size in the error.
+        return
 
     length = response.headers.get("content-length")
     if length is None or not length.isdigit():

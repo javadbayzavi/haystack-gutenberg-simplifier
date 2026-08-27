@@ -160,3 +160,39 @@ def test_latin1_text_decodes_without_replacement_characters() -> None:
 def test_rejects_non_positive_book_id() -> None:
     with pytest.raises(ValueError, match="must be positive"):
         fetch_book(0)
+
+
+def test_gzipped_content_length_is_not_trusted_as_the_size() -> None:
+    """A compressed Content-Length is not comparable to a decoded-byte budget.
+
+    Measured against gutenberg.org: plain text compresses ~2.7:1, so believing
+    the advertised length would admit books roughly three times over budget.
+    The advertised 900 here is under the 1000 budget; the decoded body is not.
+    """
+    body = b"x" * 5000
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(
+                200, headers={"content-length": "900", "content-encoding": "gzip"}
+            )
+        return httpx.Response(200, content=body)
+
+    with _client(httpx.MockTransport(handle)) as client, pytest.raises(BookTooLargeError) as caught:
+        fetch_book(11, client=client, max_bytes=1000, backoff_multiplier=0)
+
+    # Rejected by the streaming cap (size unknown), not by the HEAD gate.
+    assert caught.value.size_bytes is None
+
+
+def test_uncompressed_content_length_is_still_trusted() -> None:
+    """The HEAD gate must keep working for origins that report decoded sizes."""
+    calls: list[str] = []
+    with (
+        _client(_serve(content_length="900000", calls=calls)) as client,
+        pytest.raises(BookTooLargeError) as caught,
+    ):
+        fetch_book(11, client=client, max_bytes=1000, backoff_multiplier=0)
+
+    assert caught.value.size_bytes == 900_000
+    assert "GET" not in calls

@@ -7,12 +7,12 @@ install:
 	$(PIP) install -e ".[dev]"
 
 lint:
-	$(PY) -m ruff check src tests
-	$(PY) -m ruff format --check src tests
+	$(PY) -m ruff check src tests pipelines
+	$(PY) -m ruff format --check src tests pipelines
 
 format:
-	$(PY) -m ruff format src tests
-	$(PY) -m ruff check --fix src tests
+	$(PY) -m ruff format src tests pipelines
+	$(PY) -m ruff check --fix src tests pipelines
 
 typecheck:
 	$(PY) -m mypy

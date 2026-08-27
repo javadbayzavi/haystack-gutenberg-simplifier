@@ -35,7 +35,7 @@ markers = [
 ]
 
 [tool.ruff]
-src = ["src", "tests"]
+src = ["src", "tests", "pipelines"]
 line-length = 100
 target-version = "py311"
 
@@ -43,10 +43,19 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "BLE", "TRY"]
 ignore = ["TRY003"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["gutenberg_simplifier", "tests"]
+
 [tool.mypy]
 # No python_version pin: mypy then targets the running interpreter. Pinning it
 # made mypy parse third-party stubs (numpy, via haystack) under an older
 # grammar than the venv actually uses.
-files = ["src", "tests"]
+files = ["src", "tests", "pipelines"]
 strict = true
 warn_unreachable = true
+
+# hayhooks ships no py.typed marker, so its symbols arrive as Any. Scoped to
+# that package rather than relaxing strictness globally.
+[[tool.mypy.overrides]]
+module = ["hayhooks.*"]
+ignore_missing_imports = true
