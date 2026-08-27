@@ -1,7 +1,7 @@
 PY := .myenv/bin/python
 PIP := .myenv/bin/pip
 
-.PHONY: install lint typecheck test test-network eval eval-dry check clean
+.PHONY: install lint typecheck test test-network eval eval-dry serve check clean
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -23,6 +23,11 @@ test:
 # Hits the real Gutenberg site. Kept out of the default suite on purpose.
 test-network:
 	$(PY) -m pytest -q -m network
+
+# Runs the full application: hayhooks pipelines plus health, metrics and auth.
+serve:
+	$(PY) -m uvicorn gutenberg_simplifier.app:create_application --factory \
+		--host $${HOST:-localhost} --port $${PORT:-1416}
 
 # Measures a real model against the golden set. Needs ANTHROPIC_API_KEY.
 eval:

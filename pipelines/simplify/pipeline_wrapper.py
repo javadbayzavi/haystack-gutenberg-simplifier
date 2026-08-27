@@ -16,11 +16,13 @@ The mapping for the first kind lives in :mod:`gutenberg_simplifier.api_errors`
 that is worth testing without a server.
 """
 
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from hayhooks import BasePipelineWrapper, get_last_user_message, log
 
+from gutenberg_simplifier import metrics
 from gutenberg_simplifier.api_errors import to_http_exception, unwrap
 from gutenberg_simplifier.api_models import SimplifyResponse, to_response
 from gutenberg_simplifier.assembly import build_result
@@ -72,6 +74,7 @@ class PipelineWrapper(BasePipelineWrapper):  # type: ignore[misc]
             fetch_inputs["max_bytes"] = max_bytes
 
         log.info("simplify requested", book_id=book_id, tier=tier.value, max_bytes=max_bytes)
+        started = time.monotonic()
 
         try:
             result = self.pipeline.run(
@@ -89,6 +92,7 @@ class PipelineWrapper(BasePipelineWrapper):  # type: ignore[misc]
                 detail=http_error.detail,
                 cause=repr(unwrap(exc)),
             )
+            metrics.record_http_error(http_error.status_code)
             raise http_error from exc
 
         envelope = build_result(
@@ -99,12 +103,20 @@ class PipelineWrapper(BasePipelineWrapper):  # type: ignore[misc]
             tier,
             model=DEFAULT_MODEL,
         )
+        metrics.record_result(
+            status=envelope.status.value,
+            reject_reason=envelope.reject_reason.value if envelope.reject_reason else None,
+            duration=time.monotonic() - started,
+            metadata=envelope.metadata,
+        )
         log.info(
             "simplify finished",
             book_id=book_id,
             status=envelope.status.value,
             reject_reason=envelope.reject_reason.value if envelope.reject_reason else None,
             segments=envelope.metadata.get("segments"),
+            duration_seconds=round(time.monotonic() - started, 2),
+            fallback_applied=envelope.metadata.get("boundary_fallback_applied"),
         )
         return to_response(envelope)
 

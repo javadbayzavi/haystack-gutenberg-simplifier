@@ -12,10 +12,11 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 6** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed — a
+Built to **PR 7** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed — a
 JSON endpoint returning a versioned envelope, and an OpenAI-compatible chat
-endpoint that streams — plus a golden-set eval harness and a degradation policy
-for boundary searches that do not converge.
+endpoint that streams — behind health checks, bearer auth, Prometheus metrics
+and OpenTelemetry tracing, with a golden-set eval harness and a degradation
+policy for boundary searches that do not converge.
 
 | PR | Scope | State |
 |----|-------|-------|
@@ -26,8 +27,8 @@ for boundary searches that do not converge.
 | 4 | Age-tiered simplification, structured output | done |
 | 5 | Streaming | done |
 | 6 | Failure modes and evals | done |
-| 7 | Observability and hardening | next |
-| 8 | Container and minikube | |
+| 7 | Observability and hardening | done |
+| 8 | Container and minikube | next |
 
 ## Quickstart
 
@@ -280,6 +281,68 @@ run that it proves nothing about the model.
 PASS is worse than none, so `tests/test_evals.py` asserts that a wrong answer
 fails, a crashing case fails without aborting the run, and the table names what
 broke.
+
+## Design notes for PR 7
+
+**Liveness and readiness answer different questions.** *Live* means the process
+is not wedged — if it fails, restarting helps. *Ready* means this instance can
+serve: pipeline deployed **and** API key present. A missing key must fail
+readiness, never liveness — restarting a container cannot conjure a secret, so
+failing liveness there produces an endless crash loop while failing readiness
+correctly takes the pod out of rotation and leaves it alone. `/health/ready`
+reports each check separately, because a single boolean will not tell you which
+half broke at 3am.
+
+**Health is exempt from auth; `/metrics` is not.** A kubelet has no
+credentials, so gating health makes every pod permanently unready. `/metrics`
+stays behind the token because it reveals request volume and spend.
+
+**Content never enters a trace.** Haystack's `set_content_tag` attaches queries
+and answers to spans and is off unless an env var enables it. Here it is
+overridden to an unconditional no-op: the "content" is the body of a book and
+the prose rewritten from it, and a trace backend is the wrong place for either.
+Non-scalar tags are summarised (`<list len=5000>`), never dumped.
+
+**We replace Hayhooks' request-id middleware, not supplement it.** Hayhooks
+mints a fresh id per request and ignores an inbound `X-Request-ID`, which
+breaks correlation as soon as a caller upstream has assigned one. Ours runs
+outermost and takes precedence.
+
+**Tracing setup order is load-bearing.** Hayhooks calls its own
+`configure_tracing()` inside `create_app()`, and that call no-ops *only when
+tracing is already enabled*. Ours must run first or its OTLP bootstrap wins and
+our tracer is silently never used. A test asserts our tracer survives — Hayhooks
+wraps it in a live-buffer proxy rather than replacing it, so the assertion
+follows the wrapper chain rather than checking identity.
+
+**`reject_reason` is a metric label for a reason.** A rise in `no_story_found`
+means people are requesting the wrong books; `budget_exhausted` means the
+iteration budget is mistuned; `corrupted_text` means Gutenberg served something
+odd. Three different responses to what would otherwise look like one rejection
+rate going up. Label values come from closed enums only — an unbounded label
+turns a metrics backend into a memory leak.
+
+## Operating
+
+```bash
+make serve   # the full app: pipelines + health + metrics + auth
+```
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `/health/live` | none | process is running |
+| `/health/ready` | none | pipeline loaded and API key present |
+| `/metrics` | bearer | Prometheus exposition |
+| `/simplify/run` | bearer | JSON envelope |
+| `/v1/chat/completions` | bearer | streaming chat |
+
+Auth is **off** unless `GUTENBERG_API_TOKEN` is set. Traces export only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set; without it spans are still created, so
+instrumentation behaves identically whether or not a collector is reachable.
+
+A single request produces one trace: a `haystack.pipeline.run` span, a
+`haystack.component.run` span per component, and nested `haystack.agent.step`
+spans for the boundary loop — every one stamped with the request id.
 
 ## Evaluating
 
