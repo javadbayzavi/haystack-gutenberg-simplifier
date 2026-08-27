@@ -1,25 +1,32 @@
 """Assembly of the simplification pipeline.
 
-The pipeline is built in code rather than declared in YAML so the generator can
-be injected. Tests substitute a stub chat generator and exercise the full wiring
-with no API key and no network; only the deployed server constructs a real
-:class:`AnthropicChatGenerator`.
+Built in code rather than declared in YAML so the generators can be injected.
+Tests substitute scripted stubs and exercise the full wiring with no API key and
+no network; only the deployed server constructs real Anthropic generators.
+
+Two generators, not one. Boundary detection is a judgment task over short
+excerpts and simplification is a long-form writing task, so they are separate
+knobs -- a later PR can move detection to a cheaper model without touching the
+prose path.
 """
 
 import httpx
 from haystack import Pipeline
-from haystack.components.builders import ChatPromptBuilder
 from haystack.core.component import Component
 from haystack_integrations.components.generators.anthropic import AnthropicChatGenerator
 
-from gutenberg_simplifier.components import BoilerplateStripper, GutenbergFetcher
+from gutenberg_simplifier.components import (
+    BoilerplateStripper,
+    BoundaryDetector,
+    GutenbergFetcher,
+    StorySimplifier,
+)
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES
-from gutenberg_simplifier.prompts import simplification_template
 
 DEFAULT_MODEL = "claude-opus-5"
 
-#: One pass over a whole children's book. PR 4 chunks the body and this ceiling
-#: stops being the thing that bounds output length.
+#: One segment of a book, not a whole one. Segments are bounded by
+#: simplify.DEFAULT_SEGMENT_LINES, so this ceiling is generous on purpose.
 DEFAULT_MAX_TOKENS = 16_000
 
 
@@ -32,34 +39,40 @@ def default_generator(
 
 def build_simplification_pipeline(
     *,
-    generator: Component | None = None,
+    boundary_generator: Component | None = None,
+    simplify_generator: Component | None = None,
     max_bytes: int = DEFAULT_MAX_BOOK_BYTES,
     http_client: httpx.Client | None = None,
 ) -> Pipeline:
-    """Wire fetch -> strip -> prompt -> generate.
+    """Wire fetch -> strip -> detect boundaries -> simplify.
 
     Args:
-        generator: chat generator to use; defaults to Anthropic. Injected in
-            tests so the wiring can be verified without an API key.
+        boundary_generator: chat generator driving the boundary agent.
+        simplify_generator: chat generator doing the rewriting.
         max_bytes: size budget applied by the fetcher.
-        http_client: HTTP client for fetching. Injected in tests so the whole
-            pipeline can run offline; production passes nothing and the fetcher
-            manages its own client per call.
+        http_client: HTTP client for fetching; injected in tests so the whole
+            pipeline runs offline.
     """
     pipeline = Pipeline()
     pipeline.add_component("fetcher", GutenbergFetcher(max_bytes=max_bytes, client=http_client))
     pipeline.add_component("stripper", BoilerplateStripper())
     pipeline.add_component(
-        "prompt_builder",
-        ChatPromptBuilder(
-            template=simplification_template(),
-            variables=["story"],
-            required_variables=["story"],
+        "boundary_detector",
+        BoundaryDetector(
+            boundary_generator if boundary_generator is not None else default_generator()
         ),
     )
-    pipeline.add_component("generator", generator if generator is not None else default_generator())
+    pipeline.add_component(
+        "simplifier",
+        StorySimplifier(
+            simplify_generator if simplify_generator is not None else default_generator()
+        ),
+    )
 
     pipeline.connect("fetcher.book", "stripper.book")
-    pipeline.connect("stripper.text", "prompt_builder.story")
-    pipeline.connect("prompt_builder.prompt", "generator.messages")
+    pipeline.connect("stripper.body", "boundary_detector.body")
+    # The simplifier needs the same body the agent read, so its line numbers
+    # refer to the text actually being rewritten.
+    pipeline.connect("stripper.body", "simplifier.body")
+    pipeline.connect("boundary_detector.boundaries", "simplifier.boundaries")
     return pipeline

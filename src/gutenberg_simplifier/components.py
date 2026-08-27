@@ -23,6 +23,13 @@ from gutenberg_simplifier.boundaries import BoundaryState, detect_boundaries
 from gutenberg_simplifier.chunking import ChunkReader
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES, fetch_book
 from gutenberg_simplifier.models import BookBody, RawBook
+from gutenberg_simplifier.results import Usage
+from gutenberg_simplifier.simplify import (
+    DEFAULT_SEGMENT_LINES,
+    SimplifiedStory,
+    simplify_story,
+)
+from gutenberg_simplifier.tiers import AgeTier
 
 
 @component
@@ -89,5 +96,45 @@ class BoundaryDetector:
                 body,
                 self.chat_generator,
                 reader_factory=self._reader_factory,
+            )
+        }
+
+
+@component
+class StorySimplifier:
+    """Rewrites the resolved story for a reading age.
+
+    A rejected book short-circuits to an empty result rather than being routed
+    around. Haystack's branching would need a router component and two extra
+    edges to express "skip this step", which is more machinery than a guard
+    clause for something that costs nothing when skipped.
+    """
+
+    def __init__(
+        self,
+        chat_generator: Component,
+        *,
+        max_lines: int = DEFAULT_SEGMENT_LINES,
+    ) -> None:
+        self.chat_generator = chat_generator
+        self.max_lines = max_lines
+
+    @component.output_types(story=SimplifiedStory)
+    def run(
+        self,
+        body: BookBody,
+        boundaries: BoundaryState,
+        tier: AgeTier = AgeTier.EARLY_READER,
+    ) -> dict[str, SimplifiedStory]:
+        if not boundaries.accepted:
+            return {"story": SimplifiedStory(text="", usage=Usage(), segments=0)}
+
+        return {
+            "story": simplify_story(
+                body,
+                boundaries,
+                tier,
+                self.chat_generator,
+                max_lines=self.max_lines,
             )
         }

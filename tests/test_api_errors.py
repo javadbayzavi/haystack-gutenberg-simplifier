@@ -57,7 +57,8 @@ def test_real_pipeline_rejection_maps_to_413() -> None:
         return httpx.Response(200, content=body)
 
     pipeline = build_simplification_pipeline(
-        generator=StubChatGenerator(),
+        boundary_generator=StubChatGenerator(),
+        simplify_generator=StubChatGenerator(),
         max_bytes=10,
         http_client=httpx.Client(transport=httpx.MockTransport(handle)),
     )

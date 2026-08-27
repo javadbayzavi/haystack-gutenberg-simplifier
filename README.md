@@ -12,10 +12,9 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 3** of [PR-PLAN.md](PR-PLAN.md). The pipeline deploys behind an
-HTTP endpoint, and the boundary-detection agent is implemented and tested. The
-agent is not yet wired into the served endpoint — that happens in PR 4, where
-simplification runs over the range the agent resolves.
+Built to **PR 4** of [PR-PLAN.md](PR-PLAN.md). The full path is wired and
+deployed: fetch → strip → locate the story → rewrite it for a reading age →
+return a versioned envelope with token and cost accounting.
 
 | PR | Scope | State |
 |----|-------|-------|
@@ -23,8 +22,8 @@ simplification runs over the range the agent resolves.
 | 1 | Fetch + boilerplate strip, zero LLM | done |
 | 2 | Haystack pipeline behind a Hayhooks endpoint | done |
 | 3 | Boundary-detection agent with a bounded loop | done |
-| 4 | Age-tiered simplification, structured output | next |
-| 5 | Streaming | |
+| 4 | Age-tiered simplification, structured output | done |
+| 5 | Streaming | next |
 | 6 | Failure modes and evals | |
 | 7 | Observability and hardening | |
 | 8 | Container and minikube | |
@@ -173,6 +172,40 @@ passed only a small running state forward, which does not grow. Using the
 caching or a hand-written state-carrying loop are the mitigations, and neither
 is implemented here.
 
+## Design notes for PR 4
+
+**Tiers carry guidance, not an age number.** "Rewrite this for a 7 year old"
+leans on whatever the model believes about 7 year olds. `tiers.py` names the
+sentence length, vocabulary and structure directly, which is both more reliable
+and reviewable — a children's librarian can read that file and tell you it is
+wrong, which they could not do with an integer.
+
+**Segments break at paragraphs and carry continuity.** Cutting mid-paragraph
+hands the model half a scene and gets half a rewrite, so segmentation packs
+whole paragraphs; a paragraph longer than the limit is emitted whole rather
+than severed. Each call also receives the tail of the previous *rewritten*
+output, so names and tense survive a seam. That makes the loop sequential and
+therefore slower — parallelising it is PR 9, and would need a different
+continuity mechanism than "what you just wrote".
+
+**The PR 2 error split paid off here.** Deterministic failures are HTTP codes:
+404 unknown book, 413 over budget, 422 bad tier, 502 upstream. A book the
+*agent* refused answers **200 with `status: rejected`** and a reason — the
+request succeeded and reached an honest conclusion, and calling that 4xx would
+tell a client its request was malformed when it was not.
+
+**Unknown cost is null, not zero.** `estimated_cost_usd` is `None` for a model
+with no price on file. A silent `0.0` reads as "this was free", which is the
+opposite of "we do not know".
+
+**A rejected book costs zero rewrite calls.** The simplifier short-circuits on
+a refusal, and a test asserts no model call was made — not merely that the
+output was empty.
+
+**`schema_version` on every response.** Consumers of an LLM pipeline break on
+shape changes far more often than content changes; this is the cheapest way to
+let a client notice.
+
 ## Running the service
 
 Set the key first — `.env` is gitignored:
@@ -186,8 +219,10 @@ export ANTHROPIC_API_KEY=$(grep ANTHROPIC_API_KEY .env | cut -d= -f2-)
 The pipeline in `pipelines/simplify/` is discovered automatically. Then:
 
 ```bash
-curl -s -X POST http://localhost:1416/simplify/run -H 'Content-Type: application/json' -d '{"book_id": 14838}'
+curl -s -X POST http://localhost:1416/simplify/run -H 'Content-Type: application/json' -d '{"book_id": 14838, "tier": "preschool"}'
 ```
+
+`tier` is one of `preschool` (3–5), `early_reader` (6–8), `middle_grade` (9–11).
 
 Interactive schema at `http://localhost:1416/docs`.
 

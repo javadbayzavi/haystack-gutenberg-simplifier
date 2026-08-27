@@ -63,3 +63,32 @@ BOUNDARY_SYSTEM = (
     "\n"
     "Prefer an honest rejection over a confident guess."
 )
+
+
+TIERED_SIMPLIFY_SYSTEM = (
+    "You rewrite a public-domain story for a child aged {age_range}.\n"
+    "\n"
+    "Style for this age:\n"
+    "{guidance}\n"
+    "\n"
+    "Always:\n"
+    "- Keep the plot, the characters and their names, and the ending.\n"
+    "- Invent nothing. If the source does not say it, it does not happen.\n"
+    "- Keep the narrative voice. Do not address the reader or add a moral.\n"
+    "- Return only the rewritten prose. No preamble, no headings, no commentary,\n"
+    "  no notes about what you changed."
+)
+
+SEGMENT_USER = (
+    "This is part {part} of {total} of the story.\n"
+    "{continuity}"
+    "Rewrite the passage below. Continue naturally from what came before and "
+    "stop where the passage stops -- do not summarise, conclude, or add an "
+    "ending that is not there.\n"
+    "\n<passage>\n{passage}\n</passage>"
+)
+
+CONTINUITY_HINT = (
+    "The previous part ended like this, in your own rewritten words:\n"
+    "<previously>\n{tail}\n</previously>\n"
+)
