@@ -1,0 +1,25 @@
+{{ include "gutenberg-simplifier.fullname" . }} is installed.
+
+Watch it become ready:
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "gutenberg-simplifier.fullname" . }}
+
+Reach it:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "gutenberg-simplifier.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then:
+
+  curl -s http://localhost:{{ .Values.service.port }}/health/ready
+{{ if .Values.secrets.apiToken }}
+  curl -s -X POST http://localhost:{{ .Values.service.port }}/simplify/run \
+    -H 'Authorization: Bearer <your token>' \
+    -H 'Content-Type: application/json' \
+    -d '{"book_id": 14838, "tier": "preschool"}'
+{{- else }}
+  curl -s -X POST http://localhost:{{ .Values.service.port }}/simplify/run \
+    -H 'Content-Type: application/json' \
+    -d '{"book_id": 14838, "tier": "preschool"}'
+
+  NOTE: secrets.apiToken is unset, so the API is unauthenticated.
+{{- end }}

@@ -12,7 +12,7 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 7** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed — a
+Built to **PR 8** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed — a
 JSON endpoint returning a versioned envelope, and an OpenAI-compatible chat
 endpoint that streams — behind health checks, bearer auth, Prometheus metrics
 and OpenTelemetry tracing, with a golden-set eval harness and a degradation
@@ -28,7 +28,7 @@ policy for boundary searches that do not converge.
 | 5 | Streaming | done |
 | 6 | Failure modes and evals | done |
 | 7 | Observability and hardening | done |
-| 8 | Container and minikube | next |
+| 8 | Container and Helm chart (kind) | done |
 
 ## Quickstart
 
@@ -321,6 +321,68 @@ iteration budget is mistuned; `corrupted_text` means Gutenberg served something
 odd. Three different responses to what would otherwise look like one rejection
 rate going up. Label values come from closed enums only — an unbounded label
 turns a metrics backend into a memory leak.
+
+## Deploying
+
+A multi-stage image and a Helm chart live in [`deploy/helm`](deploy/helm/gutenberg-simplifier).
+Targeted at [kind](https://kind.sigs.k8s.io); nothing in the chart is
+kind-specific beyond `imagePullPolicy: IfNotPresent`.
+
+```bash
+make kind-load                    # build, then side-load into kind
+kubectl create namespace gutenberg-simplifier
+helm install gs deploy/helm/gutenberg-simplifier \
+  -n gutenberg-simplifier \
+  --set secrets.anthropicApiKey="$ANTHROPIC_API_KEY" \
+  --set secrets.apiToken=local-dev-token
+```
+
+`make helm-validate` renders the chart and checks it against the cluster API
+without creating anything.
+
+### Design notes for PR 8
+
+**Three probes, three different questions.** `startupProbe` holds the other two
+off while Python boots and Hayhooks scans the pipelines directory — without it
+a slow start is indistinguishable from a hang and the kubelet restarts the pod
+forever. `livenessProbe` asks only whether the process is wedged and
+deliberately tests **no dependency**: a liveness probe that checked the model
+API would restart every pod in the fleet during one upstream outage, turning a
+degradation into an outage. `readinessProbe` does check configuration, so a
+missing key drains the pod without restarting it.
+
+**The grace period is 180s, not 30.** A streamed rewrite runs for minutes, and
+the Kubernetes default would sever in-flight streams on every rollout. A
+`preStop` pause lets endpoint removal propagate before the process starts
+refusing work, so a rollout drops nothing.
+
+**`readOnlyRootFilesystem: true`, with exactly two writable mounts.** Verified
+against the image rather than guessed — the container was run under
+`--read-only` to find them.
+
+**Haystack phones home at import time.** Its telemetry module writes a config
+file into `$HOME` when the package is imported, which crashed the non-root
+image with `PermissionError`. `HAYSTACK_TELEMETRY_ENABLED=False` is set in both
+the image and the ConfigMap: a deployed service should not send usage data, and
+on a read-only filesystem it could not anyway.
+
+**No service account token is mounted.** This workload calls no Kubernetes API,
+so mounting one would hand every process in the pod a cluster credential it has
+no use for.
+
+**The chart refuses to render without a key** rather than deploying something
+that can never pass readiness. `secrets.existingSecret` is the path for
+anywhere real — a Helm-created Secret leaves its values in the release history
+in cluster storage.
+
+**Config changes roll the pods.** A checksum annotation over the ConfigMap and
+Secret, because a `helm upgrade` that only changes configuration leaves every
+pod on the old values otherwise.
+
+**The HPA targets CPU and says why that is weak.** This service waits on an
+upstream API far more than it computes, so it looks idle under heavy load.
+Concurrency or queue depth via KEDA is the better trigger; CPU is kept as the
+portable default.
 
 ## Operating
 

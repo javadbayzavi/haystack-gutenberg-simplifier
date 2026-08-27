@@ -1,7 +1,7 @@
 PY := .myenv/bin/python
 PIP := .myenv/bin/pip
 
-.PHONY: install lint typecheck test test-network eval eval-dry serve check clean
+.PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build kind-load helm-lint helm-validate
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -23,6 +23,27 @@ test:
 # Hits the real Gutenberg site. Kept out of the default suite on purpose.
 test-network:
 	$(PY) -m pytest -q -m network
+
+IMAGE ?= gutenberg-simplifier:0.1.0
+KIND_CLUSTER ?= deepset-prep
+NAMESPACE ?= gutenberg-simplifier
+CHART := deploy/helm/gutenberg-simplifier
+
+docker-build:
+	docker build -t $(IMAGE) .
+
+# kind has no registry, so the image is side-loaded. Matches the chart's
+# imagePullPolicy: IfNotPresent.
+kind-load: docker-build
+	kind load docker-image $(IMAGE) --name $(KIND_CLUSTER)
+
+helm-lint:
+	helm lint $(CHART) --set secrets.anthropicApiKey=dummy
+
+# Renders and validates against the cluster API without creating anything.
+helm-validate:
+	helm template gs $(CHART) --set secrets.anthropicApiKey=dummy --set secrets.apiToken=tok \
+		| kubectl apply --dry-run=server -f -
 
 # Runs the full application: hayhooks pipelines plus health, metrics and auth.
 serve:

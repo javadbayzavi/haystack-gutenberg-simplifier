@@ -1,0 +1,12 @@
+apiVersion: v2
+name: gutenberg-simplifier
+description: Age-tiered simplification of Project Gutenberg books, served with Haystack and Hayhooks
+type: application
+# Chart version moves with the packaging; appVersion tracks the image tag.
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - haystack
+  - hayhooks
+  - llm
+home: https://github.com/javadbayzavi/haystack-gutenberg-simplifier

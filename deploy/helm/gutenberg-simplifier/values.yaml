@@ -1,0 +1,110 @@
+# Default values. Everything here is safe to commit -- no secret has a real
+# default, and the chart refuses to render without one being supplied.
+
+replicaCount: 1
+
+image:
+  repository: gutenberg-simplifier
+  tag: "0.1.0"
+  # IfNotPresent, not Always: on kind the image is side-loaded with
+  # `kind load docker-image` and never exists in a registry, so Always would
+  # leave every pod stuck in ImagePullBackOff.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # This workload calls no Kubernetes API. Mounting a token would hand every
+  # process in the pod a cluster credential it has no use for.
+  automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 1416
+
+secrets:
+  # The Anthropic key. Supply with --set or a values file that is not in git.
+  anthropicApiKey: ""
+  # Bearer token for the API. Empty disables authentication entirely, which is
+  # only reasonable for a local cluster.
+  apiToken: ""
+  # Point at a Secret you manage yourself (sealed-secrets, ESO, SOPS) instead of
+  # letting Helm create one. Preferred anywhere real: a Helm-created Secret has
+  # its values sitting in the release history in cluster storage.
+  existingSecret: ""
+
+config:
+  logLevel: INFO
+  # OTLP HTTP endpoint. Empty means spans are created but never exported, so
+  # behaviour does not change when no collector is running.
+  otelExporterEndpoint: ""
+
+resources:
+  # This service waits on an upstream API far more than it computes. CPU is set
+  # low with a generous limit for burst; memory is the binding constraint,
+  # because a book body and its rewritten segments are held at once.
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+probes:
+  # Boot is slow: the Python process starts, Hayhooks scans the pipelines
+  # directory and builds the pipeline. A startupProbe holds liveness off until
+  # that finishes; without it, a slow boot looks like a hang and the kubelet
+  # restarts the pod forever.
+  startup:
+    periodSeconds: 3
+    failureThreshold: 30
+  liveness:
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Streaming responses run for minutes. The 30s Kubernetes default would sever
+# in-flight streams on every rollout, so the grace period is long and a preStop
+# pause lets endpoints propagate before the process starts refusing work.
+terminationGracePeriodSeconds: 180
+preStopSleepSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+metrics:
+  serviceMonitor:
+    # Requires the Prometheus operator CRDs.
+    enabled: false
+    interval: 30s
+    labels: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gutenberg-simplifier.fullname" . }}
+  labels:
+    {{- include "gutenberg-simplifier.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otelExporterEndpoint | quote }}
+  # Haystack's telemetry runs at import time and writes into $HOME. A deployed
+  # service should not phone home, and on a read-only filesystem it cannot.
+  HAYSTACK_TELEMETRY_ENABLED: "False"
