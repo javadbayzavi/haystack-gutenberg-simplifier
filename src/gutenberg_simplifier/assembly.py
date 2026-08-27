@@ -32,6 +32,7 @@ def build_metadata(
         "story_start_line": boundaries.start_line,
         "story_end_line": boundaries.end_line,
         "boundary_iterations": boundaries.iterations_used,
+        "boundary_fallback_applied": boundaries.fallback_applied,
         "segments": story.segments,
         "model": model,
         "usage": {

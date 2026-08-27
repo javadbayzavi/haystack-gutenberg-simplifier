@@ -40,6 +40,11 @@ class MetadataModel(BaseModel):
         default=None, description="Last line of the story, in raw-text line numbers"
     )
     boundary_iterations: int = Field(description="Chunks the boundary agent read")
+    boundary_fallback_applied: bool = Field(
+        default=False,
+        description="True when the boundary search did not converge and the whole "
+        "de-boilerplated body was used instead. A guessed range, not a located one.",
+    )
     segments: int = Field(description="Segments the story was rewritten in")
     model: str
     usage: UsageModel

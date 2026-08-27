@@ -35,6 +35,7 @@ from haystack.dataclasses import ChatMessage, StreamingChunk
 from gutenberg_simplifier.boilerplate import strip_gutenberg_boilerplate
 from gutenberg_simplifier.boundaries import BoundaryState, detect_boundaries
 from gutenberg_simplifier.errors import GutenbergSimplifierError
+from gutenberg_simplifier.fallback import apply_boundary_fallback
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES, fetch_book
 from gutenberg_simplifier.models import RawBook
 from gutenberg_simplifier.prompts import (
@@ -95,9 +96,12 @@ async def stream_simplification(
         yield _progress("I could not read this book just now. Please try again.")
         return
 
+    boundaries = apply_boundary_fallback(body, boundaries)
     if not boundaries.accepted:
         yield _progress(_explain_rejection(boundaries))
         return
+    if boundaries.fallback_applied:
+        yield _progress("I could not pin down where the story starts, so I will rewrite all of it")
 
     segments = segment_story(story_lines(body, boundaries), max_lines=max_lines)
     if not segments:

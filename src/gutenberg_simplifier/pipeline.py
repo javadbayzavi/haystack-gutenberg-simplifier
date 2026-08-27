@@ -29,12 +29,30 @@ DEFAULT_MODEL = "claude-opus-5"
 #: simplify.DEFAULT_SEGMENT_LINES, so this ceiling is generous on purpose.
 DEFAULT_MAX_TOKENS = 16_000
 
+#: Long enough for a segment of prose, short enough that a wedged call does not
+#: hold a streaming connection open indefinitely.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+
+#: The SDK retries connection errors, 429 and 5xx with exponential backoff.
+#: Three attempts, so a single blip does not fail a whole book, while a real
+#: outage still surfaces rather than being absorbed silently.
+DEFAULT_MAX_RETRIES = 3
+
 
 def default_generator(
-    model: str = DEFAULT_MODEL, max_tokens: int = DEFAULT_MAX_TOKENS
+    model: str = DEFAULT_MODEL,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> AnthropicChatGenerator:
     """The real generator. Reads ANTHROPIC_API_KEY from the environment."""
-    return AnthropicChatGenerator(model=model, generation_kwargs={"max_tokens": max_tokens})
+    return AnthropicChatGenerator(
+        model=model,
+        generation_kwargs={"max_tokens": max_tokens},
+        timeout=timeout,
+        max_retries=max_retries,
+    )
 
 
 def build_simplification_pipeline(

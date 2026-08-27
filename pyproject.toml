@@ -35,7 +35,7 @@ markers = [
 ]
 
 [tool.ruff]
-src = ["src", "tests", "pipelines"]
+src = ["src", "tests", "pipelines", "evals"]
 line-length = 100
 target-version = "py311"
 
@@ -44,13 +44,13 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "BLE", "TRY"]
 ignore = ["TRY003"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["gutenberg_simplifier", "tests"]
+known-first-party = ["gutenberg_simplifier", "tests", "evals"]
 
 [tool.mypy]
 # No python_version pin: mypy then targets the running interpreter. Pinning it
 # made mypy parse third-party stubs (numpy, via haystack) under an older
 # grammar than the venv actually uses.
-files = ["src", "tests", "pipelines"]
+files = ["src", "tests", "pipelines", "evals"]
 strict = true
 warn_unreachable = true
 

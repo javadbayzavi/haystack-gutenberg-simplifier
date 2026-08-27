@@ -65,6 +65,10 @@ class BoundaryState:
     confidence: Confidence
     notes: str
     iterations_used: int
+    #: True when these boundaries came from the fallback rather than the agent.
+    #: Surfaced in the response so a caller can tell a located story from a
+    #: guessed one.
+    fallback_applied: bool = False
 
     @property
     def accepted(self) -> bool:
@@ -291,4 +295,5 @@ def as_dict(state: BoundaryState) -> dict[str, Any]:
         "confidence": state.confidence.value,
         "notes": state.notes,
         "iterations_used": state.iterations_used,
+        "fallback_applied": state.fallback_applied,
     }

@@ -12,9 +12,10 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 5** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed: a
+Built to **PR 6** of [PR-PLAN.md](PR-PLAN.md). Two surfaces are deployed — a
 JSON endpoint returning a versioned envelope, and an OpenAI-compatible chat
-endpoint that streams the rewritten story token by token.
+endpoint that streams — plus a golden-set eval harness and a degradation policy
+for boundary searches that do not converge.
 
 | PR | Scope | State |
 |----|-------|-------|
@@ -24,8 +25,8 @@ endpoint that streams the rewritten story token by token.
 | 3 | Boundary-detection agent with a bounded loop | done |
 | 4 | Age-tiered simplification, structured output | done |
 | 5 | Streaming | done |
-| 6 | Failure modes and evals | next |
-| 7 | Observability and hardening | |
+| 6 | Failure modes and evals | done |
+| 7 | Observability and hardening | next |
 | 8 | Container and minikube | |
 
 ## Quickstart
@@ -241,6 +242,55 @@ old" contains two numbers, and picking wrong silently fetches the wrong book.
 Ages are consumed by explicit patterns first, an explicitly labelled id always
 wins, and whatever survives is the id. `test_chat.py` covers the phrasings
 people actually type, including the ones that must be refused.
+
+## Design notes for PR 6
+
+**Refusals of content stand; failures of process degrade.** This is the whole
+fallback policy. `no_story_found`, `corrupted_text` and
+`inappropriate_content` are *judgments about the book* — overriding one ships
+exactly the output the refusal existed to prevent, so they are never touched.
+`budget_exhausted` and `ambiguous_boundaries` say nothing about the book; they
+say the search did not converge. Those degrade to the whole de-boilerplated
+body, marked `confidence: low`, with `boundary_fallback_applied: true` in the
+metadata. A silent fallback would make a guessed range indistinguishable from a
+located one, so it is flagged in the response and stated in the notes.
+
+**The evals assert decisions, never prose.** Asserting rewritten text tests the
+model's word choice, which drifts between runs and model versions and tells you
+nothing about whether the pipeline works. What must hold is that a manual is
+refused, a garbled scan is refused, and a clean story is not.
+
+**Expectations are sets, not single values.** A story that stops mid-sentence
+may honestly be reported as ambiguous *or* accepted with the text that exists.
+Encoding "either of these, but never `corrupted_text` and never
+`no_story_found`" is more useful than inventing one right answer and loosening
+the test later when it fails for a good reason.
+
+**Evals run with the fallback disabled.** The fallback turns a non-converging
+search into an accepted low-confidence result — correct for serving a request,
+wrong for measuring the agent, since it would quietly convert every ambiguous
+case into a pass.
+
+**`make eval` refuses to run without a key.** An eval that mocks the thing being
+evaluated is a regression test in a costume; it would print a green table that
+means nothing. `--dry-run` exists to check the harness itself and says on every
+run that it proves nothing about the model.
+
+**The harness is tested for detecting failure.** A harness that always reports
+PASS is worse than none, so `tests/test_evals.py` asserts that a wrong answer
+fails, a crashing case fails without aborting the run, and the table names what
+broke.
+
+## Evaluating
+
+```bash
+make eval-dry   # harness check; proves nothing about the model
+make eval       # the golden set against a real model; needs ANTHROPIC_API_KEY
+```
+
+The golden set lives in `evals/fixtures/`: a clean story, one buried under
+dedications and a contents page, a garbled scan, a technical manual, and a
+story that stops mid-sentence.
 
 ## Streaming surface
 

@@ -21,6 +21,7 @@ from haystack.core.component import Component
 from gutenberg_simplifier.boilerplate import strip_gutenberg_boilerplate
 from gutenberg_simplifier.boundaries import BoundaryState, detect_boundaries
 from gutenberg_simplifier.chunking import ChunkReader
+from gutenberg_simplifier.fallback import apply_boundary_fallback
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES, fetch_book
 from gutenberg_simplifier.models import BookBody, RawBook
 from gutenberg_simplifier.results import Usage
@@ -85,19 +86,22 @@ class BoundaryDetector:
         chat_generator: Component,
         *,
         reader_factory: Callable[[BookBody], ChunkReader] | None = None,
+        fallback: bool = True,
     ) -> None:
         self.chat_generator = chat_generator
         self._reader_factory = reader_factory
+        self.fallback = fallback
 
     @component.output_types(boundaries=BoundaryState)
     def run(self, body: BookBody) -> dict[str, BoundaryState]:
-        return {
-            "boundaries": detect_boundaries(
-                body,
-                self.chat_generator,
-                reader_factory=self._reader_factory,
-            )
-        }
+        boundaries = detect_boundaries(
+            body,
+            self.chat_generator,
+            reader_factory=self._reader_factory,
+        )
+        if self.fallback:
+            boundaries = apply_boundary_fallback(body, boundaries)
+        return {"boundaries": boundaries}
 
 
 @component
