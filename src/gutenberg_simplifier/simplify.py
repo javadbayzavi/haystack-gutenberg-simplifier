@@ -36,6 +36,40 @@ DEFAULT_SEGMENT_LINES = 120
 CONTINUITY_TAIL_CHARS = 400
 
 
+def build_system_message(tier: AgeTier) -> ChatMessage:
+    """The instruction the model works under for every segment of a book.
+
+    Shared with the streaming path. Both used to assemble this independently,
+    which is the shape that quietly diverges: a change to the tier prompt would
+    have reached the JSON endpoint and not the chat one, and nothing would have
+    failed.
+    """
+    guidance = guidance_for(tier)
+    return ChatMessage.from_system(
+        TIERED_SIMPLIFY_SYSTEM.format(age_range=guidance.age_range, guidance=guidance.guidance)
+    )
+
+
+def build_segment_message(
+    segment: tuple[str, ...], *, index: int, total: int, previous: str
+) -> ChatMessage:
+    """One segment's request, carrying continuity from the previous rewrite.
+
+    ``previous`` is the previously *rewritten* text, not the source: what has to
+    stay consistent across a seam is the prose the reader just saw.
+    """
+    return ChatMessage.from_user(
+        SEGMENT_USER.format(
+            part=index + 1,
+            total=total,
+            continuity=(
+                CONTINUITY_HINT.format(tail=previous[-CONTINUITY_TAIL_CHARS:]) if previous else ""
+            ),
+            passage="\n".join(segment),
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SimplifiedStory:
     text: str
@@ -115,25 +149,16 @@ def simplify_story(
     if not segments:
         return SimplifiedStory(text="", usage=Usage(), segments=0)
 
-    tier_guidance = guidance_for(tier)
-    system = ChatMessage.from_system(
-        TIERED_SIMPLIFY_SYSTEM.format(
-            age_range=tier_guidance.age_range,
-            guidance=tier_guidance.guidance,
-        )
-    )
-
+    system = build_system_message(tier)
     parts: list[str] = []
     usage = Usage()
 
     for index, segment in enumerate(segments):
-        user = ChatMessage.from_user(
-            SEGMENT_USER.format(
-                part=index + 1,
-                total=len(segments),
-                continuity=_continuity_hint(parts),
-                passage="\n".join(segment),
-            )
+        user = build_segment_message(
+            segment,
+            index=index,
+            total=len(segments),
+            previous=parts[-1] if parts else "",
         )
         result = chat_generator.run(messages=[system, user])
         replies = result.get("replies") or []
@@ -148,12 +173,6 @@ def simplify_story(
         usage=usage,
         segments=len(segments),
     )
-
-
-def _continuity_hint(parts: list[str]) -> str:
-    if not parts:
-        return ""
-    return CONTINUITY_HINT.format(tail=parts[-1][-CONTINUITY_TAIL_CHARS:])
 
 
 #: Providers and integrations disagree on these key names, so read all of them

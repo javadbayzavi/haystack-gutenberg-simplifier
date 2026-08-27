@@ -221,3 +221,72 @@ def test_abandoning_the_stream_cancels_the_in_flight_call() -> None:
 
     asyncio.run(take_two())
     assert generator.cancelled == 1
+
+
+def test_both_paths_build_byte_identical_prompts() -> None:
+    """The JSON and streaming paths must ask the model the same thing.
+
+    They used to assemble these prompts independently, which is the shape that
+    quietly diverges: a change to the tier prompt or the continuity hint would
+    have reached one endpoint and not the other, and nothing would have failed.
+    Both now share the builders in simplify.py, and this asserts it stays true.
+    """
+    from gutenberg_simplifier.boilerplate import strip_gutenberg_boilerplate
+    from gutenberg_simplifier.boundaries import BoundaryState, Confidence
+    from gutenberg_simplifier.simplify import simplify_story
+    from tests.stubs import StubChatGenerator
+
+    # A body long enough to need more than one segment, so the continuity hint
+    # is exercised and not just the first prompt.
+    lines = [f"Sentence number {i} of the tale." if i % 3 else "" for i in range(40)]
+    text = "\n".join(
+        [
+            "*** START OF THE PROJECT GUTENBERG EBOOK LONG ***",
+            "",
+            *lines,
+            "",
+            "*** END OF THE PROJECT GUTENBERG EBOOK LONG ***",
+        ]
+    )
+    raw = RawBook(book_id=1, text=text, source_url="https://example.test/1", size_bytes=len(text))
+    body = strip_gutenberg_boilerplate(raw)
+    boundaries = BoundaryState(
+        start_line=body.start_line,
+        end_line=body.start_line + body.line_count - 1,
+        reject_reason=None,
+        confidence=Confidence.HIGH,
+        notes="",
+        iterations_used=1,
+    )
+
+    reply = "The rewritten sentence."
+    sync_generator = StubChatGenerator(reply)
+    simplify_story(body, boundaries, AgeTier.PRESCHOOL, sync_generator, max_lines=12)
+
+    stream_generator = AsyncStreamingChatGenerator(reply)
+    asyncio.run(
+        _collect(
+            stream_simplification(
+                1,
+                AgeTier.PRESCHOOL,
+                boundary_generator=ScriptedChatGenerator(
+                    decision(
+                        found=True,
+                        start_line=boundaries.start_line,
+                        end_line=boundaries.end_line,
+                        confidence="high",
+                    )
+                ),
+                simplify_generator=stream_generator,
+                fetch=lambda book_id, max_bytes: raw,
+                max_lines=12,
+            )
+        )
+    )
+
+    assert len(sync_generator.seen) > 1, "test needs multiple segments to be meaningful"
+    assert len(sync_generator.seen) == len(stream_generator.seen)
+    for sync_messages, stream_messages in zip(
+        sync_generator.seen, stream_generator.seen, strict=True
+    ):
+        assert [m.text for m in sync_messages] == [m.text for m in stream_messages]

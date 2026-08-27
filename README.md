@@ -322,6 +322,26 @@ odd. Three different responses to what would otherwise look like one rejection
 rate going up. Label values come from closed enums only — an unbounded label
 turns a metrics backend into a memory leak.
 
+### On concurrency (PR 9, deliberately not built)
+
+The plan's last item was `run_api_async` plus parallel segments. Reading
+Hayhooks settled the first half: `deploy_utils._execute_pipeline_run` already
+does `await run_in_threadpool(pipeline_wrapper.run_api, ...)`, so a sync
+`run_api` never blocks the event loop. A `run_api_async` built on
+`asyncio.to_thread` would be the same mechanism moved into this repo — pure
+ceremony.
+
+Real async — `AsyncPipeline` plus `run_async` on all four components — *would*
+buy something: each in-flight request currently holds one of Starlette's ~40
+threadpool workers for the minutes a rewrite takes, so that pool, not the
+model, is the concurrency ceiling. That is a genuine limit and it is not
+addressed here.
+
+Parallel segments were rejected on their own merits: continuity is what makes
+the loop sequential, each segment receives the previous *rewritten* tail, and
+a children's book runs to 1–4 segments. Parallelism would cost the continuity
+mechanism to speed up something that is already short.
+
 ## Deploying
 
 A multi-stage image and a Helm chart live in [`deploy/helm`](deploy/helm/gutenberg-simplifier).

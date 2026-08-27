@@ -38,14 +38,10 @@ from gutenberg_simplifier.errors import GutenbergSimplifierError
 from gutenberg_simplifier.fallback import apply_boundary_fallback
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES, fetch_book
 from gutenberg_simplifier.models import RawBook
-from gutenberg_simplifier.prompts import (
-    CONTINUITY_HINT,
-    SEGMENT_USER,
-    TIERED_SIMPLIFY_SYSTEM,
-)
 from gutenberg_simplifier.simplify import (
-    CONTINUITY_TAIL_CHARS,
     DEFAULT_SEGMENT_LINES,
+    build_segment_message,
+    build_system_message,
     segment_story,
     story_lines,
 )
@@ -115,27 +111,14 @@ async def stream_simplification(
     )
     yield "\n"
 
-    system = ChatMessage.from_system(
-        TIERED_SIMPLIFY_SYSTEM.format(age_range=guidance.age_range, guidance=guidance.guidance)
-    )
+    system = build_system_message(tier)
 
     previous = ""
     for index, segment in enumerate(segments):
         if index:
             yield "\n\n"
 
-        user = ChatMessage.from_user(
-            SEGMENT_USER.format(
-                part=index + 1,
-                total=len(segments),
-                continuity=(
-                    CONTINUITY_HINT.format(tail=previous[-CONTINUITY_TAIL_CHARS:])
-                    if previous
-                    else ""
-                ),
-                passage="\n".join(segment),
-            )
-        )
+        user = build_segment_message(segment, index=index, total=len(segments), previous=previous)
 
         buffer: list[str] = []
         try:
