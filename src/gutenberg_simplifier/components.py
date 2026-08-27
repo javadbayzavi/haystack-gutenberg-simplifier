@@ -11,12 +11,16 @@ layer needs to make; :mod:`pipelines.simplify.pipeline_wrapper` translates them
 into HTTP responses at the edge instead.
 """
 
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 from haystack import component
+from haystack.core.component import Component
 
 from gutenberg_simplifier.boilerplate import strip_gutenberg_boilerplate
+from gutenberg_simplifier.boundaries import BoundaryState, detect_boundaries
+from gutenberg_simplifier.chunking import ChunkReader
 from gutenberg_simplifier.fetch import DEFAULT_MAX_BOOK_BYTES, fetch_book
 from gutenberg_simplifier.models import BookBody, RawBook
 
@@ -58,3 +62,32 @@ class BoilerplateStripper:
     def run(self, book: RawBook) -> dict[str, Any]:
         body = strip_gutenberg_boilerplate(book)
         return {"body": body, "text": body.text}
+
+
+@component
+class BoundaryDetector:
+    """Locates the story inside a body using the boundary agent.
+
+    Emits the state rather than a trimmed body: whether an ambiguous or refused
+    result should end the request or fall back is a policy decision, and it
+    belongs to the caller, not to a component in the middle of a pipeline.
+    """
+
+    def __init__(
+        self,
+        chat_generator: Component,
+        *,
+        reader_factory: Callable[[BookBody], ChunkReader] | None = None,
+    ) -> None:
+        self.chat_generator = chat_generator
+        self._reader_factory = reader_factory
+
+    @component.output_types(boundaries=BoundaryState)
+    def run(self, body: BookBody) -> dict[str, BoundaryState]:
+        return {
+            "boundaries": detect_boundaries(
+                body,
+                self.chat_generator,
+                reader_factory=self._reader_factory,
+            )
+        }

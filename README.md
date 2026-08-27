@@ -12,18 +12,18 @@ instead of bad output, streaming, evaluation of decisions, tracing, and deployme
 
 ## Status
 
-Built to **PR 2** of [PR-PLAN.md](PR-PLAN.md). The pipeline is wired end to end
-and deploys behind an HTTP endpoint. Simplification is deliberately naive — one
-prompt over the whole book, no chunking, no age tiers, no boundary detection.
-That is the walking skeleton; the interesting extraction arrives in PR 3.
+Built to **PR 3** of [PR-PLAN.md](PR-PLAN.md). The pipeline deploys behind an
+HTTP endpoint, and the boundary-detection agent is implemented and tested. The
+agent is not yet wired into the served endpoint — that happens in PR 4, where
+simplification runs over the range the agent resolves.
 
 | PR | Scope | State |
 |----|-------|-------|
 | 0 | Repo scaffolding, lint/type/test gates | done |
 | 1 | Fetch + boilerplate strip, zero LLM | done |
 | 2 | Haystack pipeline behind a Hayhooks endpoint | done |
-| 3 | Boundary-detection agent with a bounded loop | next |
-| 4 | Age-tiered simplification, structured output | |
+| 3 | Boundary-detection agent with a bounded loop | done |
+| 4 | Age-tiered simplification, structured output | next |
 | 5 | Streaming | |
 | 6 | Failure modes and evals | |
 | 7 | Observability and hardening | |
@@ -127,6 +127,51 @@ its place in PR 3, where the agent produces judgments ("boundaries ambiguous",
 **The generator is injectable.** `build_simplification_pipeline(generator=...)`
 takes a stub in tests, so the full wiring is exercised with no API key and no
 network. The HTTP client is injectable for the same reason.
+
+## Design notes for PR 3
+
+**The reader owns termination, not the model.** `ChunkReader` advances the
+cursor, counts iterations, and returns `None` once the budget is spent. The
+model decides only what it is looking at. Termination is therefore a property
+of code with no model in it, and the test that proves it scripts a generator
+that asks for another chunk *forever* — the call still returns, with
+`BUDGET_EXHAUSTED`, in a bounded number of turns. Two independent stops back
+each other: the reader stops serving, and the agent's `max_agent_steps` ceiling
+ends the run.
+
+**Two tools, not one.** The design sketched a single `read_next_chunk`. The
+decision now comes back through a second `record_decision` tool call, so its
+shape is enforced by a JSON schema instead of parsed out of free text, and the
+agent gets a precise exit condition.
+
+**A schema cannot catch a confident lie.** The model can call `record_decision`
+with `found=true` and no line numbers, an inverted range, a reject reason
+outside the taxonomy, or a confidence value that is not a confidence value.
+Each of those is normalised into an honest rejection rather than propagating as
+bad data — an unrecognised reason becomes `ambiguous_boundaries`, which is the
+truthful reading of "refused for something we have no bucket for". Every one of
+those paths is a test.
+
+**Rejections are reported, never raised.** `detect_boundaries` always returns a
+`BoundaryState`. There is no book it throws on.
+
+### Two costs this design carries, stated plainly
+
+**Novel-length books are refused, not handled.** The iteration budget defaults
+to 40 reads (~2,100 lines at the default stride). Peter Rabbit needs 4. Alice
+needs 62 and is rejected as `BUDGET_EXHAUSTED`. That is deliberate for a
+children's-book pipeline — the alternative is silently spending 60+ model turns
+per request — but it is a real limit, not a solved problem. The obvious fix is
+scanning inward from both ends rather than a single forward pass, since the
+story's end is near the file's end; that is a change to the loop shape and is
+not in this PR.
+
+**The agent's context grows with every chunk read.** Haystack's `Agent` keeps
+the whole conversation, so turn N carries all N chunks. The original sketch
+passed only a small running state forward, which does not grow. Using the
+`Agent` abstraction — which is the point of the exercise — costs that. Prompt
+caching or a hand-written state-carrying loop are the mitigations, and neither
+is implemented here.
 
 ## Running the service
 
