@@ -131,7 +131,7 @@ def test_invalid_geometry_is_rejected(chunk_lines: int, overlap_lines: int, matc
 
 
 def test_measured_book_sizes_fit_the_default_budget() -> None:
-    """Peter Rabbit and Alice, as measured by the PR 1 CLI."""
+    """Peter Rabbit and Alice, as measured by the CLI."""
     peter_rabbit = ChunkReader(_body(218))
     alice = ChunkReader(_body(3380))
 

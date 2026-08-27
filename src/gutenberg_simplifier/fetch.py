@@ -42,7 +42,7 @@ from gutenberg_simplifier.errors import (
 from gutenberg_simplifier.models import RawBook
 
 #: Roughly the upper bound of a children's book in plain text. Provisional --
-#: PR 3 measures real books and this gets retuned against that data.
+#: Retune against real books if the target corpus changes.
 DEFAULT_MAX_BOOK_BYTES = 250_000
 
 DEFAULT_TIMEOUT_SECONDS = 15.0

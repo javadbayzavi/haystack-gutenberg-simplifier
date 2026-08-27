@@ -49,7 +49,7 @@ class ChunkReader:
     """Serves a body one overlapping window at a time, under a fixed budget.
 
     Not a Haystack component: the agent needs to drive this directly from a
-    tool, and PR 4 reuses it outside any pipeline run.
+    tool, and the simplification stage reuses it outside any pipeline run.
     """
 
     def __init__(

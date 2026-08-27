@@ -3,7 +3,7 @@
 Hayhooks discovers this file by convention (``pipelines/<name>/pipeline_wrapper.py``)
 and generates the request and response schemas from :meth:`run_api`'s signature.
 
-Error handling splits along a line set in PR 2 and paid off here. Deterministic
+Error handling splits along one line. Deterministic
 failures become HTTP status codes, because they are facts about the request that
 HTTP already has vocabulary for -- 404 unknown book, 413 over budget, 502
 upstream down. A book the *agent* refused is a different animal: the request

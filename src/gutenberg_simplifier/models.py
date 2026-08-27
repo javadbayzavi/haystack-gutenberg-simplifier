@@ -27,7 +27,7 @@ class BookBody:
 
     ``start_line`` is the offset of ``lines[0]`` within the *raw* text, so any
     index derived from this body can be translated back to a position in the
-    original download. The boundary-detection agent (PR 3) reports line numbers
+    original download. The boundary-detection agent reports line numbers
     against the raw text, and this offset is what makes that possible.
     """
 

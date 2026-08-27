@@ -10,8 +10,8 @@ being rewritten alone.
 
 *Segments carry continuity.* Each call receives the tail of the previous
 *rewritten* output, so names and tense stay put across a seam. That makes the
-loop sequential and therefore slower; parallelising it is PR 9's problem, and
-would need a different continuity mechanism than "what you just wrote".
+loop sequential and therefore slower; parallelising it would need a different
+continuity mechanism than "what you just wrote".
 """
 
 from dataclasses import dataclass

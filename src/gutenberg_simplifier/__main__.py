@@ -1,7 +1,7 @@
 """Command line entry point for the deterministic stage.
 
 Its job is measurement, not presentation: the line counts it reports are the
-input to choosing chunk size, overlap and the iteration budget in PR 3, and the
+input to choosing chunk size, overlap and the agent's iteration budget, and the
 size budget wants tuning against real books rather than a guess.
 
     python -m gutenberg_simplifier 11

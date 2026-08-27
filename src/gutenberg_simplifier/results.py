@@ -4,9 +4,9 @@ Every response carries ``schema_version``. Consumers of an LLM pipeline break on
 shape changes far more often than on content changes, and this is the cheapest
 possible way to let a client notice.
 
-The split between ``status`` here and the HTTP status code is deliberate and was
-set in PR 2: HTTP codes describe facts about the request (unknown book, over
-budget, upstream down), while ``status: rejected`` describes a *judgment* the
+The split between ``status`` here and the HTTP status code is deliberate: HTTP
+codes describe facts about the request (unknown book, over budget, upstream
+down), while ``status: rejected`` describes a *judgment* the
 model made (the text looked corrupted, the boundaries were ambiguous). A refused
 book is a successful request that reached an honest conclusion, so it answers
 200 with a reason -- not 4xx.

@@ -3,7 +3,8 @@
 These are thin adapters, on purpose. The fetching and stripping logic stays in
 plain functions that are testable without a pipeline; the components only
 translate between those functions and Haystack's socket model. That separation
-is what lets PR 3's agent reuse the same reader logic outside a pipeline run.
+is what lets the boundary agent reuse the same reader logic outside a pipeline
+run.
 
 Errors are allowed to propagate. A component that swallowed
 :class:`GutenbergSimplifierError` into a "result" would hide a decision the API
@@ -62,8 +63,9 @@ class GutenbergFetcher:
 class BoilerplateStripper:
     """Removes Gutenberg's licence header and footer.
 
-    Emits the structured body *and* its flattened text: the text feeds the
-    prompt builder, while the body carries the line offsets PR 3 needs.
+        Emits the structured body *and* its flattened text: the text feeds the
+        prompt builder, while the body carries the line offsets the boundary agent
+    reports against.
     """
 
     @component.output_types(body=BookBody, text=str)
