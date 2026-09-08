@@ -229,7 +229,28 @@ signal for the simplifier, which waits on an API — but for a *self-hosted*
 engine it tracks load closely, while the stub and hosted engines look idle under
 load just like the simplifier does.
 
-Still to come: optional composition from the simplifier.
+### Composing the two
+
+The simplifier gains one endpoint, `POST /simplify/narrate`, which simplifies a
+book and streams it as audio. It is **inert unless `NARRATOR_URL` is set** — with
+no narrator configured it answers `501` and the service is otherwise byte-for-byte
+the same, which is asserted rather than assumed.
+
+```bash
+helm install gs deploy/helm/gutenberg-simplifier -n gutenberg-simplifier \
+  --set secrets.anthropicApiKey="$ANTHROPIC_API_KEY" \
+  --set narrator.url=http://gn-gutenberg-narrator:1417
+```
+
+**Neither service imports the other**, in either direction, enforced by tests
+that scan the AST and check `sys.modules` after import. The simplifier reaches
+the narrator over HTTP, which is the same decision as running them separately,
+expressed in code: a shared library would tie their release cycles together, and
+a URL does not.
+
+The images are pruned of each other's code as well as each other's dependencies
+— one `pyproject` builds one distribution containing both packages, so each
+Dockerfile removes the other, and CI asserts both directions.
 
 ## Known limitations
 

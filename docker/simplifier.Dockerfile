@@ -21,6 +21,14 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir ".[simplifier]"
 
+# One pyproject builds one distribution containing both packages, so installing
+# either extra lays down both. The dependencies are what actually differ, but
+# shipping the other service's code is still code this image never runs. Pruned
+# explicitly, and CI asserts the absence -- a silent no-op here would otherwise
+# go unnoticed if the layout ever moved.
+RUN find /opt/venv -type d -name gutenberg_narrator -prune -exec rm -rf {} +
+
+
 # --- runtime stage ---------------------------------------------------------
 FROM python:3.13-slim AS runtime
 

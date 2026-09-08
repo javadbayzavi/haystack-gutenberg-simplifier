@@ -37,6 +37,15 @@ secrets:
   # its values sitting in the release history in cluster storage.
   existingSecret: ""
 
+# Optional narration. Empty means the simplifier has no narrator and its
+# /simplify/narrate endpoint answers 501 -- the service is otherwise identical.
+# Point this at the narrator release's Service, e.g.
+#   http://gn-gutenberg-narrator:1417
+narrator:
+  url: ""
+  # Bearer token for the narrator, when it has authentication enabled.
+  apiToken: ""
+
 config:
   logLevel: INFO
   # OTLP HTTP endpoint. Empty means spans are created but never exported, so

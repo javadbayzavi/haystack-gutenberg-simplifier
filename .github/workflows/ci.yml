@@ -95,8 +95,23 @@ jobs:
         run: test "$(docker exec ci id -u)" = "10001"
 
       # The services are deployed separately and must not carry each other's
-      # dependencies. A stray import would otherwise only show up as image size.
-      - name: Narrator image carries no simplifier dependencies
+      # code or dependencies. One pyproject builds one distribution containing
+      # both packages, so each Dockerfile prunes the other -- and a prune that
+      # silently stopped matching would otherwise go unnoticed.
+      - name: Image carries only its own service
+        run: |
+          docker run --rm ${{ matrix.service }}:ci python -c "
+          import importlib.util as u, sys
+          own, other = ('gutenberg_${{ matrix.service }}',
+                        'gutenberg_narrator' if '${{ matrix.service }}' == 'simplifier'
+                        else 'gutenberg_simplifier')
+          if not u.find_spec(own):
+              sys.exit(f'{own} is missing from its own image')
+          if u.find_spec(other):
+              sys.exit(f'image contains {other}, which it never runs')
+          "
+
+      - name: Narrator carries no simplifier dependencies
         if: matrix.service == 'narrator'
         run: |
           docker run --rm narrator:ci python -c "

@@ -10,3 +10,6 @@ data:
   # Haystack's telemetry runs at import time and writes into $HOME. A deployed
   # service should not phone home, and on a read-only filesystem it cannot.
   HAYSTACK_TELEMETRY_ENABLED: "False"
+  {{- with .Values.narrator.url }}
+  NARRATOR_URL: {{ . | quote }}
+  {{- end }}

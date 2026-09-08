@@ -23,17 +23,20 @@ import os
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, StreamingResponse
 from hayhooks import create_app
 from hayhooks.server.pipelines import registry
+from pydantic import BaseModel, Field
 
-from gutenberg_simplifier import metrics
+from gutenberg_simplifier import metrics, narration
 from gutenberg_simplifier.observability import (
     configure_logging,
     configure_tracing,
     new_request_id,
     request_id_var,
 )
+from gutenberg_simplifier.tiers import AgeTier
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -45,6 +48,17 @@ _UNAUTHENTICATED_PATHS = frozenset({"/health/live", "/health/ready"})
 #: Requests are a book id and a couple of enums. Anything larger is a mistake or
 #: an attack, and rejecting it early costs nothing.
 MAX_BODY_BYTES = 64 * 1024
+
+#: The pipeline Hayhooks deploys from pipelines/simplify/.
+PIPELINE_NAME = "simplify"
+
+
+class NarrateBookRequest(BaseModel):
+    book_id: int = Field(description="Project Gutenberg book id.")
+    tier: AgeTier = Field(
+        default=AgeTier.EARLY_READER, description="Reading-age band, also selecting the voice."
+    )
+    max_bytes: int | None = Field(default=None, description="Override the size budget.")
 
 
 def _expected_token() -> str | None:
@@ -148,3 +162,44 @@ def _add_operational_routes(app: FastAPI) -> None:
     async def prometheus_metrics() -> Response:
         payload, content_type = metrics.render()
         return Response(content=payload, media_type=content_type)
+
+    @app.post("/simplify/narrate")
+    async def simplify_and_narrate(body: NarrateBookRequest) -> Response:
+        """Simplify a book and stream it as narrated audio.
+
+        Present only as a convenience: the same result comes from calling
+        /simplify/run and posting its content to the narrator. It exists here so
+        a caller does not have to hold a book's text to pass it along.
+        """
+        if not narration.is_enabled():
+            # 501, not 404: the route exists and the request is well formed --
+            # this deployment simply has no narrator wired to it.
+            return JSONResponse(
+                status_code=501,
+                content={"detail": "Narration is not configured. Set NARRATOR_URL to enable it."},
+            )
+
+        wrapper = registry.get(PIPELINE_NAME)
+        if wrapper is None:
+            return JSONResponse(status_code=503, content={"detail": "Pipeline is not deployed yet"})
+
+        # The pipeline is synchronous and slow; a worker thread keeps it off the
+        # event loop, exactly as Hayhooks does for its own routes.
+        result = await run_in_threadpool(
+            wrapper.run_api, book_id=body.book_id, tier=body.tier, max_bytes=body.max_bytes
+        )
+
+        if result.status != "ok" or not result.content:
+            # A refusal is known before any audio exists, so it can still be
+            # reported properly. Content-Type tells the two apart.
+            return JSONResponse(status_code=200, content=result.model_dump())
+
+        return StreamingResponse(
+            narration.stream_narration(result.content, body.tier.value),
+            media_type="audio/wav",
+            headers={
+                "X-Book-Id": str(body.book_id),
+                "X-Tier": body.tier.value,
+                "Cache-Control": "no-store",
+            },
+        )

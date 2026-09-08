@@ -51,6 +51,7 @@ packages = ["src/gutenberg_simplifier", "src/gutenberg_narrator"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not network'"
+asyncio_mode = "auto"
 markers = [
     "network: hits the real Project Gutenberg site; deselected by default",
 ]
