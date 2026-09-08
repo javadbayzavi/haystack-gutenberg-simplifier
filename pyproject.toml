@@ -9,7 +9,14 @@ description = "Age-tiered simplification of Project Gutenberg books, served with
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
-dependencies = [
+# Nothing is shared. The two services are deployed separately and their images
+# must not carry each other's dependencies -- a narrator image containing
+# Haystack, or a simplifier image containing a TTS client, is a coupling that
+# shows up as image size, CVE surface and rebuild churn.
+dependencies = []
+
+[project.optional-dependencies]
+simplifier = [
     "haystack-ai>=3.0.0",
     "anthropic-haystack>=5.0",
     "hayhooks>=1.24",
@@ -20,8 +27,12 @@ dependencies = [
     "prometheus-client>=0.21",
     "uvicorn>=0.30",
 ]
-
-[project.optional-dependencies]
+narrator = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "prometheus-client>=0.21",
+]
+all = ["gutenberg-simplifier[narrator,simplifier]"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -33,7 +44,7 @@ dev = [
 gutenberg-simplifier = "gutenberg_simplifier.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gutenberg_simplifier"]
+packages = ["src/gutenberg_simplifier", "src/gutenberg_narrator"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

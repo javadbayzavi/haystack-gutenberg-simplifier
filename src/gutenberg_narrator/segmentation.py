@@ -96,7 +96,15 @@ def split_for_synthesis(text: str, *, max_characters: int = DEFAULT_MAX_CHARACTE
 
     if current:
         units.append(current)
-    return units
+
+    # A unit of pure punctuation -- a stray "..", a rule of dashes, a page
+    # ornament -- has nothing to say. Sending it costs an engine call and
+    # returns an artefact rather than silence.
+    return [unit for unit in units if _has_speakable_content(unit)]
+
+
+def _has_speakable_content(unit: str) -> bool:
+    return any(character.isalnum() for character in unit)
 
 
 def _fit(sentence: str, max_characters: int) -> list[str]:

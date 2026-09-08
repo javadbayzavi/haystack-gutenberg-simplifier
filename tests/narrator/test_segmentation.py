@@ -101,3 +101,19 @@ def test_empty_and_whitespace_yield_nothing() -> None:
 def test_an_impossible_budget_is_rejected() -> None:
     with pytest.raises(ValueError, match="must be positive"):
         split_for_synthesis("text", max_characters=0)
+
+
+@pytest.mark.parametrize("text", ["...", "   ..   ", "— — —", "***", "  ~~~  "])
+def test_units_with_nothing_speakable_are_dropped(text: str) -> None:
+    """A page ornament costs an engine call and returns an artefact, not silence."""
+    assert split_for_synthesis(text) == []
+
+
+def test_a_bare_number_is_still_speakable() -> None:
+    assert split_for_synthesis("1892.") == ["1892."]
+
+
+def test_ornaments_between_real_sentences_do_not_survive() -> None:
+    units = split_for_synthesis("He ran. * * * She stopped.", max_characters=20)
+
+    assert all(any(c.isalnum() for c in unit) for unit in units)

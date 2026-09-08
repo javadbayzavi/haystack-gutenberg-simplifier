@@ -19,7 +19,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 # is cached until the dependency set itself changes.
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[simplifier]"
 
 # --- runtime stage ---------------------------------------------------------
 FROM python:3.13-slim AS runtime

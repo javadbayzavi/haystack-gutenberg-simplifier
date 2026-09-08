@@ -34,7 +34,7 @@ Refusals are first-class. A book can be rejected as `corrupted_text`,
 
 ```bash
 python3 -m venv .myenv
-.myenv/bin/pip install -e ".[dev]"
+.myenv/bin/pip install -e ".[all,dev]"
 make check
 ```
 
@@ -147,24 +147,44 @@ runs the same `make` targets on Python 3.11 and 3.13, builds the container and
 starts it under a read-only root filesystem, and validates the Helm chart —
 all without a key, a GPU or a cluster.
 
-## Narration (in progress)
+## Narration (optional add-on)
 
-An optional companion service turns the simplified prose into narrated audio.
-It is a **separate service, not a feature**, because the two scale on opposite
-signals: the simplifier waits on an upstream API, while synthesis is
-compute-bound. Bundling them would mean scaling one on the other's bottleneck.
+A companion service turns simplified prose into narrated audio. It is a
+**separate service, not a feature**, because the two scale on opposite signals:
+the simplifier waits on an upstream API, while synthesis is compute-bound.
+Bundling them would scale one on the other's bottleneck.
 
-`src/gutenberg_narrator/` currently holds the core: TTS-aware segmentation,
-voice profiles by reading age, PCM framing, and a `SynthesisEngine` protocol
-with a stub implementation. The stub is not only a test double — it is the
-engine developers and CI run, so the whole service is exercisable with no
-model, no GPU and no API key.
+```bash
+NARRATOR_ENGINE=stub .myenv/bin/python -m gutenberg_narrator.app
+```
 
-The narrator imports nothing from the simplifier, and a test enforces that: an
-add-on that cannot be deployed without its host is not optional.
+```bash
+curl -s -X POST http://localhost:1417/narrate \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Once upon a time there was a rabbit.","voice":"preschool"}' \
+  --output story.wav
+```
 
-Still to come: the HTTP surface, a real engine, a chart, and optional
-composition from the simplifier.
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `/health/live`, `/health/ready` | none | process up; engine loaded |
+| `/metrics` | bearer | Prometheus exposition |
+| `/voices` | bearer | available voice profiles |
+| `/narrate` | bearer | streams `audio/wav` |
+
+Auth is off unless `NARRATOR_API_TOKEN` is set.
+
+**The stub engine is the default**, and it is what developers and CI run — not
+merely a test double. The whole service is exercisable with no model, no GPU and
+no API key, and a contributor working on the HTTP layer never downloads weights.
+
+**The separation is enforced, not just intended.** The narrator imports nothing
+from the simplifier (a test scans the AST and checks `sys.modules` after import),
+and its image carries none of the simplifier's dependencies — 253MB against
+522MB, with a CI job that fails if Haystack ever appears in it.
+
+Still to come: a real engine, a chart, and optional composition from the
+simplifier.
 
 ## Known limitations
 

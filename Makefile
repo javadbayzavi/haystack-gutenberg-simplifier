@@ -3,10 +3,10 @@
 PY ?= .myenv/bin/python
 PIP ?= .myenv/bin/pip
 
-.PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build kind-load helm-lint helm-validate
+.PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build narrator-build kind-load helm-lint helm-validate
 
 install:
-	$(PIP) install -e ".[dev]"
+	$(PIP) install -e ".[all,dev]"
 
 lint:
 	$(PY) -m ruff check src tests pipelines evals
@@ -27,15 +27,19 @@ test-network:
 	$(PY) -m pytest -q -m network
 
 IMAGE ?= gutenberg-simplifier:0.1.0
+NARRATOR_IMAGE ?= gutenberg-narrator:0.1.0
 KIND_CLUSTER ?= deepset-prep
 NAMESPACE ?= gutenberg-simplifier
 CHART := deploy/helm/gutenberg-simplifier
 
 docker-build:
-	docker build -t $(IMAGE) .
+	docker build -f docker/simplifier.Dockerfile -t $(IMAGE) .
 
 # kind has no registry, so the image is side-loaded. Matches the chart's
 # imagePullPolicy: IfNotPresent.
+narrator-build:
+	docker build -f docker/narrator.Dockerfile -t $(NARRATOR_IMAGE) .
+
 kind-load: docker-build
 	kind load docker-image $(IMAGE) --name $(KIND_CLUSTER)
 
