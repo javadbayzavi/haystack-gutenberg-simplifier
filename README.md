@@ -205,8 +205,31 @@ from the simplifier (a test scans the AST and checks `sys.modules` after import)
 and its image carries none of the simplifier's dependencies — 253MB against
 522MB, with a CI job that fails if Haystack ever appears in it.
 
-Still to come: a real engine, a chart, and optional composition from the
-simplifier.
+### Deploying the narrator
+
+Its own chart and its own release, so either service can be upgraded or rolled
+back without the other:
+
+```bash
+make narrator-kind-load
+helm install gn deploy/helm/gutenberg-narrator -n gutenberg-simplifier \
+  --set engine=hosted \
+  --set secrets.ttsApiKey="$TTS_API_KEY" \
+  --set secrets.apiToken=local-dev-token
+```
+
+`engine=stub` (the default) needs no credential and creates no Secret. The chart
+**refuses to render** a hosted engine without one, rather than deploying pods
+that would fail readiness on every replica.
+
+The two charts differ in two places that matter. The grace period is longer here
+(300s), because a narration runs for as long as its audio and a rollout must not
+cut a listener off mid-story. And the HPA note inverts: CPU is a meaningless
+signal for the simplifier, which waits on an API — but for a *self-hosted*
+engine it tracks load closely, while the stub and hosted engines look idle under
+load just like the simplifier does.
+
+Still to come: optional composition from the simplifier.
 
 ## Known limitations
 

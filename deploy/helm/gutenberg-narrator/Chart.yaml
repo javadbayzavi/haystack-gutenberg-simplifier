@@ -1,0 +1,11 @@
+apiVersion: v2
+name: gutenberg-narrator
+description: Optional narration service turning simplified prose into audio
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - tts
+  - audio
+  - llm
+home: https://github.com/javadbayzavi/haystack-gutenberg-simplifier

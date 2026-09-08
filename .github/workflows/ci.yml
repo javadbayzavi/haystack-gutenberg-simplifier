@@ -119,19 +119,41 @@ jobs:
       - uses: azure/setup-helm@v5
 
       - name: Lint
-        run: helm lint deploy/helm/gutenberg-simplifier --set secrets.anthropicApiKey=ci
+        run: |
+          helm lint deploy/helm/gutenberg-simplifier --set secrets.anthropicApiKey=ci
+          helm lint deploy/helm/gutenberg-narrator
 
-      - name: Renders
+      - name: Render every optional path
         run: |
           helm template gs deploy/helm/gutenberg-simplifier \
             --set secrets.anthropicApiKey=ci --set secrets.apiToken=ci \
             --set autoscaling.enabled=true --set metrics.serviceMonitor.enabled=true \
             > /dev/null
+          helm template gn deploy/helm/gutenberg-narrator > /dev/null
+          helm template gn deploy/helm/gutenberg-narrator \
+            --set engine=hosted --set secrets.ttsApiKey=ci --set secrets.apiToken=ci \
+            --set autoscaling.enabled=true --set metrics.serviceMonitor.enabled=true \
+            > /dev/null
+          helm template gn deploy/helm/gutenberg-narrator \
+            --set engine=hosted --set secrets.existingSecret=managed > /dev/null
 
-      # The chart must refuse to deploy something that can never pass readiness.
-      - name: Refuses to render without a key
+      # Both charts must refuse to deploy pods that could never pass readiness.
+      - name: Refuse to render without a credential
         run: |
           if helm template gs deploy/helm/gutenberg-simplifier >/dev/null 2>&1; then
-            echo "chart rendered without an API key; the guard has regressed" >&2
+            echo "simplifier chart rendered without an API key" >&2
+            exit 1
+          fi
+          if helm template gn deploy/helm/gutenberg-narrator --set engine=hosted >/dev/null 2>&1; then
+            echo "narrator chart rendered a hosted engine with no credential" >&2
+            exit 1
+          fi
+
+      # The stub engine needs no Secret, and an envFrom naming one that was
+      # never created leaves every pod in CreateContainerConfigError.
+      - name: Stub engine renders without a secretRef
+        run: |
+          if helm template gn deploy/helm/gutenberg-narrator | grep -q secretRef; then
+            echo "stub rendering references a Secret that is not created" >&2
             exit 1
           fi

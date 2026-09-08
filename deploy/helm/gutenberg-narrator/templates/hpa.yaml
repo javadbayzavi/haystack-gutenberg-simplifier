@@ -1,0 +1,27 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "gutenberg-narrator.fullname" . }}
+  labels:
+    {{- include "gutenberg-narrator.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "gutenberg-narrator.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    # Whether CPU is the right signal depends on the engine, which is the
+    # interesting difference from the simplifier. A self-hosted model is
+    # genuinely compute-bound and CPU tracks load closely. The stub and hosted
+    # engines wait on the network and look idle under load, exactly like the
+    # simplifier -- scale those on concurrency via KEDA instead.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

@@ -1,0 +1,19 @@
+{{ include "gutenberg-narrator.fullname" . }} is installed, running the {{ .Values.engine }} engine.
+{{ if eq .Values.engine "stub" }}
+NOTE: the stub engine produces silence. Set engine=hosted with a TTS_API_KEY for real speech.
+{{ end }}
+Watch it become ready:
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "gutenberg-narrator.fullname" . }}
+
+Reach it:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "gutenberg-narrator.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then:
+
+  curl -s -X POST http://localhost:{{ .Values.service.port }}/narrate \
+    {{ if .Values.secrets.apiToken }}-H 'Authorization: Bearer <your token>' \
+    {{ end }}-H 'Content-Type: application/json' \
+    -d '{"text":"Once upon a time there was a rabbit.","voice":"preschool"}' \
+    --output story.wav

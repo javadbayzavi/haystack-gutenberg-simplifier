@@ -3,7 +3,7 @@
 PY ?= .myenv/bin/python
 PIP ?= .myenv/bin/pip
 
-.PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build narrator-build kind-load helm-lint helm-validate
+.PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build narrator-build kind-load narrator-kind-load helm-lint helm-validate
 
 install:
 	$(PIP) install -e ".[all,dev]"
@@ -31,6 +31,7 @@ NARRATOR_IMAGE ?= gutenberg-narrator:0.1.0
 KIND_CLUSTER ?= deepset-prep
 NAMESPACE ?= gutenberg-simplifier
 CHART := deploy/helm/gutenberg-simplifier
+NARRATOR_CHART := deploy/helm/gutenberg-narrator
 
 docker-build:
 	docker build -f docker/simplifier.Dockerfile -t $(IMAGE) .
@@ -43,13 +44,19 @@ narrator-build:
 kind-load: docker-build
 	kind load docker-image $(IMAGE) --name $(KIND_CLUSTER)
 
+narrator-kind-load: narrator-build
+	kind load docker-image $(NARRATOR_IMAGE) --name $(KIND_CLUSTER)
+
 helm-lint:
 	helm lint $(CHART) --set secrets.anthropicApiKey=dummy
+	helm lint $(NARRATOR_CHART)
 
 # Renders and validates against the cluster API without creating anything.
 helm-validate:
 	helm template gs $(CHART) --set secrets.anthropicApiKey=dummy --set secrets.apiToken=tok \
 		| kubectl apply --dry-run=server -f -
+	helm template gn $(NARRATOR_CHART) --set engine=hosted --set secrets.ttsApiKey=dummy \
+		--set secrets.apiToken=tok | kubectl apply --dry-run=server -f -
 
 # Runs the full application: hayhooks pipelines plus health, metrics and auth.
 serve:

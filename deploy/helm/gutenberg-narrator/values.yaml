@@ -1,0 +1,121 @@
+# Defaults for the narration add-on. Installable on its own: nothing here refers
+# to the simplifier, and the two are separate releases so either can be upgraded
+# or rolled back without the other.
+
+replicaCount: 1
+
+image:
+  repository: gutenberg-narrator
+  tag: "0.1.0"
+  # kind has no registry; the image is side-loaded with `kind load docker-image`.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # Calls no Kubernetes API, so a mounted token would be a credential with no use.
+  automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 1417
+
+# Which engine the pods run.
+#   stub   - silence, no credential. Safe default; a deployment that forgets to
+#            choose produces silence rather than an unexpected bill.
+#   hosted - a real speech API. Requires secrets.ttsApiKey or existingSecret.
+engine: stub
+
+secrets:
+  # Required when engine is "hosted".
+  ttsApiKey: ""
+  # Bearer token for this service's API. Empty disables authentication.
+  apiToken: ""
+  # A Secret you manage yourself (sealed-secrets, ESO, SOPS). Preferred anywhere
+  # real: a Helm-created Secret leaves its values in the release history.
+  existingSecret: ""
+
+config:
+  logLevel: INFO
+  # Provider base URL for the hosted engine; empty uses the engine default.
+  ttsBaseUrl: ""
+  ttsModel: ""
+  # Per-tier provider voice overrides. The right voice for a children's
+  # narrator differs between providers, so it is deploy-time configuration.
+  voices:
+    preschool: ""
+    earlyReader: ""
+    middleGrade: ""
+  # Refuse work larger than this before synthesising any of it.
+  maxTotalCharacters: ""
+  maxUnitCharacters: ""
+
+resources:
+  # Sized for the stub and hosted engines, which are IO-bound and hold only the
+  # audio for one unit at a time. A self-hosted model inverts this completely:
+  # gigabytes of weights resident, a GPU or many cores, and a startup measured
+  # in minutes. Do not carry these numbers over to that -- measure them.
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+probes:
+  # Startup is fast for the stub and hosted engines. A self-hosted model loads
+  # weights here and needs far more headroom.
+  startup:
+    periodSeconds: 3
+    failureThreshold: 20
+  liveness:
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# A narration runs for as long as the audio does. The 30s default would cut
+# listeners off mid-story on every rollout.
+terminationGracePeriodSeconds: 300
+preStopSleepSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  # Meaningful only for a self-hosted engine, which is genuinely compute-bound.
+  # With the stub or a hosted API this service waits on the network and looks
+  # idle under load, exactly like the simplifier -- scale on concurrency there.
+  targetCPUUtilizationPercentage: 70
+
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

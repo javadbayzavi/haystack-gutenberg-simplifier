@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gutenberg-narrator.fullname" . }}
+  labels:
+    {{- include "gutenberg-narrator.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  NARRATOR_ENGINE: {{ .Values.engine | quote }}
+  {{- with .Values.config.ttsBaseUrl }}
+  TTS_BASE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.ttsModel }}
+  TTS_MODEL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.voices.preschool }}
+  TTS_VOICE_PRESCHOOL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.voices.earlyReader }}
+  TTS_VOICE_EARLY_READER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.voices.middleGrade }}
+  TTS_VOICE_MIDDLE_GRADE: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.maxTotalCharacters }}
+  NARRATOR_MAX_TOTAL_CHARACTERS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.maxUnitCharacters }}
+  NARRATOR_MAX_UNIT_CHARACTERS: {{ . | quote }}
+  {{- end }}
