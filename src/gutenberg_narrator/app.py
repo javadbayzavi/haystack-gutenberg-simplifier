@@ -18,7 +18,8 @@ Full detection would need a container format with an index, which is beyond MVP.
 import logging
 import os
 import time
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -67,14 +68,26 @@ def create_application(engine: SynthesisEngine | None = None) -> FastAPI:
     """Build the service. ``engine`` is injected in tests."""
     configure_logging()
 
+    # Built here, not in the lifespan, so a bad NARRATOR_ENGINE or a missing
+    # credential fails the deployment rather than every request.
+    built = engine if engine is not None else settings.build_engine()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            # A hosted engine holds a connection pool and a local one holds
+            # model weights; neither should outlive the process quietly.
+            app.state.engine.close()
+
     app = FastAPI(
         title="gutenberg-narrator",
         description="Turns simplified prose into narrated audio.",
         version="0.1.0",
+        lifespan=lifespan,
     )
-    # Built once at startup: a bad NARRATOR_ENGINE should fail the deployment,
-    # not every request.
-    app.state.engine = engine if engine is not None else settings.build_engine()
+    app.state.engine = built
 
     _add_middleware(app)
     _add_routes(app)
@@ -140,6 +153,10 @@ def _add_routes(app: FastAPI) -> None:
         checks = {"engine_loaded": engine is not None}
         if engine is not None:
             checks["engine_format_valid"] = engine.audio_format.sample_rate > 0
+        if settings.engine_name() == "hosted":
+            # A missing credential fails readiness, never liveness: no restart
+            # can supply one, so failing liveness would only crash-loop.
+            checks["credential_present"] = settings.tts_api_key() is not None
 
         ok = all(checks.values())
         return JSONResponse(

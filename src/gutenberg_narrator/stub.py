@@ -33,3 +33,7 @@ class StubEngine:
         self.spoken.append((text, voice))
         seconds = len(text) / (CHARACTERS_PER_SECOND * voice.pace)
         return silence(self._audio_format, seconds)
+
+    def close(self) -> None:
+        """Nothing to release."""
+        return

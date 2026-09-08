@@ -174,9 +174,31 @@ curl -s -X POST http://localhost:1417/narrate \
 
 Auth is off unless `NARRATOR_API_TOKEN` is set.
 
-**The stub engine is the default**, and it is what developers and CI run — not
-merely a test double. The whole service is exercisable with no model, no GPU and
-no API key, and a contributor working on the HTTP layer never downloads weights.
+### Engines
+
+| `NARRATOR_ENGINE` | Needs | Output |
+|---|---|---|
+| `stub` (default) | nothing | silence, sized at a natural speaking rate |
+| `hosted` | `TTS_API_KEY` | real speech from an OpenAI-compatible `/v1/audio/speech` |
+
+**The stub is the default and is what developers and CI run** — not merely a
+test double. The whole service is exercisable with no model, no GPU and no API
+key, and a contributor working on the HTTP layer never downloads weights. A
+deployment that forgets to choose an engine produces silence rather than an
+unexpected bill.
+
+The hosted engine points at any provider speaking the OpenAI speech API
+(`TTS_BASE_URL`), asks for raw PCM so units concatenate without decoding, maps
+each reading age to a provider voice (`TTS_VOICE_PRESCHOOL` and friends), and
+retries only what is worth retrying. It refuses to construct without a
+credential, so a missing key fails the deployment rather than every request —
+and `/health/ready` reports `credential_present` so the pod drains instead of
+crash-looping.
+
+Self-hosting a model (Chatterbox, Piper, XTTS) is an implementation of the same
+`SynthesisEngine` protocol. What changes is not the architecture but the
+deployment: weights to distribute, a much longer startup, GPU scheduling, and a
+CPU signal that becomes meaningful where it was useless for the simplifier.
 
 **The separation is enforced, not just intended.** The narrator imports nothing
 from the simplifier (a test scans the AST and checks `sys.modules` after import),

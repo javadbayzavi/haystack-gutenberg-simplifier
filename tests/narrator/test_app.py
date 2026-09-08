@@ -194,3 +194,34 @@ def test_an_oversized_body_is_rejected_early(client: TestClient) -> None:
     )
 
     assert response.status_code == 413
+
+
+def test_the_engine_is_closed_on_shutdown() -> None:
+    """A hosted engine holds a connection pool; a local one holds weights.
+    Neither should outlive the process quietly."""
+
+    class ClosableStub(StubEngine):
+        closed = False
+
+        def close(self) -> None:
+            type(self).closed = True
+
+    engine = ClosableStub()
+    with TestClient(create_application(engine)):
+        pass  # entering and leaving runs the lifespan
+
+    assert ClosableStub.closed is True
+
+
+def test_readiness_flags_a_hosted_engine_with_no_credential(
+    monkeypatch: pytest.MonkeyPatch, engine: StubEngine
+) -> None:
+    """Readiness, not liveness: no restart can supply a secret."""
+    monkeypatch.setenv("NARRATOR_ENGINE", "hosted")
+    monkeypatch.delenv("TTS_API_KEY", raising=False)
+    monkeypatch.delenv("NARRATOR_API_TOKEN", raising=False)
+
+    payload = TestClient(create_application(engine)).get("/health/ready").json()
+
+    assert payload["status"] == "not_ready"
+    assert payload["checks"]["credential_present"] is False

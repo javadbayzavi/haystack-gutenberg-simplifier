@@ -62,3 +62,12 @@ class SynthesisEngine(Protocol):
             EngineError: synthesis failed for a reason the caller cannot fix.
         """
         ...
+
+    def close(self) -> None:
+        """Release whatever the engine holds.
+
+        Part of the contract even though a stub has nothing to release: an
+        engine with a connection pool or a loaded model needs a shutdown hook,
+        and the service cannot call one that only some implementations have.
+        """
+        ...

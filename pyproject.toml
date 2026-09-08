@@ -31,6 +31,8 @@ narrator = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "prometheus-client>=0.21",
+    "httpx>=0.28",
+    "tenacity>=9.0",
 ]
 all = ["gutenberg-simplifier[narrator,simplifier]"]
 dev = [
