@@ -147,6 +147,25 @@ runs the same `make` targets on Python 3.11 and 3.13, builds the container and
 starts it under a read-only root filesystem, and validates the Helm chart —
 all without a key, a GPU or a cluster.
 
+## Narration (in progress)
+
+An optional companion service turns the simplified prose into narrated audio.
+It is a **separate service, not a feature**, because the two scale on opposite
+signals: the simplifier waits on an upstream API, while synthesis is
+compute-bound. Bundling them would mean scaling one on the other's bottleneck.
+
+`src/gutenberg_narrator/` currently holds the core: TTS-aware segmentation,
+voice profiles by reading age, PCM framing, and a `SynthesisEngine` protocol
+with a stub implementation. The stub is not only a test double — it is the
+engine developers and CI run, so the whole service is exercisable with no
+model, no GPU and no API key.
+
+The narrator imports nothing from the simplifier, and a test enforces that: an
+add-on that cannot be deployed without its host is not optional.
+
+Still to come: the HTTP surface, a real engine, a chart, and optional
+composition from the simplifier.
+
 ## Known limitations
 
 - **Novel-length books are refused.** The boundary budget covers a children's
