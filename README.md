@@ -1,5 +1,9 @@
 # haystack-gutenberg-simplifier
 
+[![CI](https://github.com/javadbayzavi/haystack-gutenberg-simplifier/actions/workflows/ci.yml/badge.svg)](https://github.com/javadbayzavi/haystack-gutenberg-simplifier/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+
 Takes a book from [Project Gutenberg](https://www.gutenberg.org), finds where the
 story actually starts and ends, rewrites it for a given reading age, and serves
 it over HTTP with [Haystack](https://haystack.deepset.ai) and
@@ -138,7 +142,10 @@ make format
 ```
 
 The default suite never touches the network or a model: the HTTP client and both
-chat generators are injectable, and the agent is driven by scripted stubs.
+chat generators are injectable, and the agent is driven by scripted stubs. CI
+runs the same `make` targets on Python 3.11 and 3.13, builds the container and
+starts it under a read-only root filesystem, and validates the Helm chart —
+all without a key, a GPU or a cluster.
 
 ## Known limitations
 
@@ -158,5 +165,5 @@ Design rationale and the reasoning behind these tradeoffs is in
 
 ## Licence
 
-Project code is for demonstration. Books fetched are public domain via Project
-Gutenberg and subject to its terms.
+[MIT](LICENSE). Books fetched are public domain via Project Gutenberg and
+subject to its terms.

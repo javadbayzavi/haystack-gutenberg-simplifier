@@ -1,5 +1,7 @@
-PY := .myenv/bin/python
-PIP := .myenv/bin/pip
+# Overridable so CI runs the same targets a developer does:
+#   make check PY=python PIP=pip
+PY ?= .myenv/bin/python
+PIP ?= .myenv/bin/pip
 
 .PHONY: install lint typecheck test test-network eval eval-dry serve check clean docker-build kind-load helm-lint helm-validate
 

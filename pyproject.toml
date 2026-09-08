@@ -7,6 +7,8 @@ name = "gutenberg-simplifier"
 version = "0.1.0"
 description = "Age-tiered simplification of Project Gutenberg books, served with Haystack + Hayhooks"
 requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
 dependencies = [
     "haystack-ai>=3.0.0",
     "anthropic-haystack>=5.0",

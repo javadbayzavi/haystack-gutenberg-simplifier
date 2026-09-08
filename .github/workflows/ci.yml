@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push makes an in-flight run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint, types, tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in pyproject, and the version the container runs.
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      # The same targets a developer runs, pointed at this interpreter. mypy
+      # takes its target version from the running interpreter, so the matrix
+      # genuinely type-checks the declared floor rather than only the newest.
+      - name: Lint
+        run: make lint PY=python
+
+      - name: Type check
+        run: make typecheck PY=python
+
+      # No network and no API key: the HTTP client and both chat generators are
+      # injectable, and network-marked tests are deselected by default.
+      - name: Test
+        run: make test PY=python
+
+      - name: Eval harness self-check
+        run: make eval-dry PY=python
+
+  image:
+    name: container builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t gutenberg-simplifier:ci .
+
+      # Building is not enough. A previous version of this image built cleanly
+      # and then died on startup, because Haystack's telemetry writes to $HOME
+      # at import time and the non-root user had none. Only starting it catches
+      # that class of failure.
+      - name: Start and probe
+        run: |
+          docker run -d --name ci --read-only --tmpfs /tmp --tmpfs /home/app \
+            -p 1416:1416 -e ANTHROPIC_API_KEY=ci-placeholder \
+            gutenberg-simplifier:ci
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:1416/health/live >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:1416/health/live
+          curl -sf http://localhost:1416/health/ready
+
+      - name: Runs as non-root
+        run: test "$(docker exec ci id -u)" = "10001"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker logs ci
+
+  chart:
+    name: helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Lint
+        run: helm lint deploy/helm/gutenberg-simplifier --set secrets.anthropicApiKey=ci
+
+      - name: Renders
+        run: |
+          helm template gs deploy/helm/gutenberg-simplifier \
+            --set secrets.anthropicApiKey=ci --set secrets.apiToken=ci \
+            --set autoscaling.enabled=true --set metrics.serviceMonitor.enabled=true \
+            > /dev/null
+
+      # The chart must refuse to deploy something that can never pass readiness.
+      - name: Refuses to render without a key
+        run: |
+          if helm template gs deploy/helm/gutenberg-simplifier >/dev/null 2>&1; then
+            echo "chart rendered without an API key; the guard has regressed" >&2
+            exit 1
+          fi

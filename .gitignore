@@ -20,5 +20,12 @@ dist/
 .coverage
 htmlcov/
 
+# Unrelated work that lives in this same directory. These are NOT part of this
+# project and must never be committed: the kubeconfigs hold cluster credentials
+# and the support bundles hold cluster state. `git add -A` will happily stage
+# them otherwise.
+/deepset-practice/
+/doc-process/
+
 # OS
 .DS_Store
